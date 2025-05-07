@@ -1,0 +1,15 @@
+{
+  "types": [
+    { "type": "feat", "section": "✨ Features" },
+    { "type": "fix", "section": "🐛 Fixes" },
+    { "type": "chore", "section": "🧹 Chores", "hidden": false },
+    { "type": "docs", "section": "📝 Documentation" },
+    { "type": "test", "section": "✅ Tests" },
+    { "type": "refactor", "section": "🔧 Refactoring" },
+    { "type": "perf", "section": "🚀 Performance" }
+  ],
+  "skip": {
+    "tag": false
+  },
+  "header": "# 📦 Changelog\n\nAll notable changes to this project will be documented below.\n"
+}

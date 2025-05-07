@@ -1,0 +1,6 @@
+* text=auto
+*.ts diff=typescript
+*.tsx diff=typescript
+*.js diff=javascript
+*.json diff=json
+*.md diff=markdown
