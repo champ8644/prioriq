@@ -16,7 +16,8 @@
     "dev": "tsc --watch",
     "test": "jest --config jest.config.js",
     "prepare": "tsc",
-    "release": "standard-version"
+    "release": "standard-version",
+    "publish": "git push --follow-tags origin master && npm publish"
   },
   "repository": {
     "type": "git",
