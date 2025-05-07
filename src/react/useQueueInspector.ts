@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { TaskScheduler } from '../scheduler/TaskScheduler';
+import { useEffect, useState } from "react";
+import type { TaskScheduler } from "../scheduler/TaskScheduler";
 
 /**
  * Provides a full snapshot of all queues at a set interval.

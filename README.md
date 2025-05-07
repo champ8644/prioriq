@@ -1,7 +1,7 @@
 # 🧠 prioriq
 
-[![CI](https://github.com/yourusername/prioriq/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/prioriq/actions)
-[![Coverage](https://codecov.io/gh/yourusername/prioriq/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/prioriq)
+[![CI](https://github.com/champ8644/prioriq/actions/workflows/ci.yml/badge.svg)](https://github.com/champ8644/prioriq/actions)
+[![Coverage](https://codecov.io/gh/champ8644/prioriq/branch/main/graph/badge.svg)](https://codecov.io/gh/champ8644/prioriq)
 ![npm version](https://img.shields.io/npm/v/prioriq)
 ![bundlephobia](https://badgen.net/bundlephobia/minzip/prioriq)
 ![MIT License](https://img.shields.io/npm/l/prioriq)
@@ -37,10 +37,10 @@ const scheduler = new TaskScheduler();
 scheduler.addQueue('visits', 3);
 
 scheduler.request({
-  id: 'v123',
-  task: () => fetchVisit(123),
-  delay: 200,
-  dedupeKey: 'visit:123'
+id: 'v123',
+task: () => fetchVisit(123),
+delay: 200,
+dedupeKey: 'visit:123'
 });
 \`\`\`
 
@@ -52,11 +52,11 @@ scheduler.request({
 const { queued, running, pending } = useTaskScheduler(scheduler, 'visits');
 
 scheduleWhenVisible(
-  entry?.isIntersecting,
-  'visits',
-  id,
-  () => fetchVisit(id),
-  scheduler
+entry?.isIntersecting,
+'visits',
+id,
+() => fetchVisit(id),
+scheduler
 );
 \`\`\`
 
@@ -64,9 +64,9 @@ scheduleWhenVisible(
 
 ## 📚 Documentation
 
-- [Getting Started](https://yourusername.github.io/prioriq/getting-started)
-- [API Reference](https://yourusername.github.io/prioriq/api-reference)
-- [React Hooks](https://yourusername.github.io/prioriq/examples/react-hook-demo)
+- [Getting Started](https://champ8644.github.io/prioriq/getting-started)
+- [API Reference](https://champ8644.github.io/prioriq/api-reference)
+- [React Hooks](https://champ8644.github.io/prioriq/examples/react-hook-demo)
 
 > Or explore \`/docs/\` folder for GitHub Pages setup.
 
@@ -77,7 +77,7 @@ scheduleWhenVisible(
 \`\`\`bash
 npm run build
 npm test
-npm run release   # via standard-version
+npm run release # via standard-version
 \`\`\`
 
 ---

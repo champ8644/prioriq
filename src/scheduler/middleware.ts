@@ -1,4 +1,4 @@
-import type { Middleware, MiddlewareContext } from './types';
+import type { Middleware, MiddlewareContext } from "./types";
 
 /**
  * Composes middleware functions into a single executable function,
@@ -10,17 +10,21 @@ export function composeMiddleware(
 ): () => Promise<any> {
   return () => {
     let index = -1;
+
     const dispatch = (i: number): Promise<any> => {
       if (i <= index) {
-        return Promise.reject(new Error('next() called multiple times'));
+        return Promise.reject(new Error("next() called multiple times"));
       }
       index = i;
+
       const fn = middlewares[i];
       if (!fn) {
         return ctx.task();
       }
+
       return fn(ctx, () => dispatch(i + 1));
     };
+
     return dispatch(0);
   };
 }

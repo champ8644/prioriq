@@ -1,15 +1,15 @@
-import PQueue from 'p-queue';
-import mitt from 'mitt';
-import { withTimeout, runWhenIdle } from './taskUtils';
-import { composeMiddleware } from './middleware';
-import { CircuitBreaker } from './circuitBreaker';
+import PQueue from "p-queue";
+import mitt from "mitt";
+import { withTimeout, runWhenIdle } from "./taskUtils";
+import { composeMiddleware } from "./middleware";
+import { CircuitBreaker } from "./circuitBreaker";
 import type {
   Task,
   RequestOptions,
   Middleware,
   MiddlewareContext,
   Events,
-} from './types';
+} from "./types";
 
 /**
  * A robust async task scheduler with concurrency, debouncing, deduplication,
@@ -32,7 +32,10 @@ export class TaskScheduler {
     }
   }
 
-  configureGroup(group: string, config: { maxFailures: number; cooldownMs: number }) {
+  configureGroup(
+    group: string,
+    config: { maxFailures: number; cooldownMs: number }
+  ) {
     this.breaker.configure(group, config);
   }
 
@@ -52,7 +55,7 @@ export class TaskScheduler {
     const {
       id,
       task,
-      group = 'default',
+      group = "default",
       priority = 0,
       delay = 0,
       debounceMs,
@@ -136,7 +139,7 @@ export class TaskScheduler {
     this.abortControllers.set(controllerId, signal);
 
     const wrappedTask = async () => {
-      this.emitter.emit('start', { group, id });
+      this.emitter.emit("start", { group, id });
 
       try {
         if (idle) await runWhenIdle();
@@ -145,10 +148,10 @@ export class TaskScheduler {
           : await runner();
 
         this.breaker.clear(group);
-        this.emitter.emit('finish', { group, id });
+        this.emitter.emit("finish", { group, id });
         return result;
       } catch (error) {
-        this.emitter.emit('error', { group, id, error });
+        this.emitter.emit("error", { group, id, error });
         this.breaker.recordFailure(group);
         throw error;
       } finally {
@@ -198,7 +201,10 @@ export class TaskScheduler {
   }
 
   snapshot() {
-    const result: Record<string, { queued: number; running: number; pending: number }> = {};
+    const result: Record<
+      string,
+      { queued: number; running: number; pending: number }
+    > = {};
     for (const [group, queue] of this.queues.entries()) {
       result[group] = {
         queued: queue.size,

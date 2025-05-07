@@ -1,5 +1,5 @@
-import { useEffect, useReducer } from 'react';
-import type { TaskScheduler } from '../scheduler/TaskScheduler';
+import { useEffect, useReducer } from "react";
+import type { TaskScheduler } from "../scheduler/TaskScheduler";
 
 /**
  * Subscribes a component to live updates from a specific task group queue.
@@ -9,13 +9,13 @@ export function useTaskScheduler(scheduler: TaskScheduler, group: string) {
 
   useEffect(() => {
     const onChange = () => forceUpdate();
-    scheduler.on('start', onChange);
-    scheduler.on('finish', onChange);
-    scheduler.on('error', onChange);
+    scheduler.on("start", onChange);
+    scheduler.on("finish", onChange);
+    scheduler.on("error", onChange);
     return () => {
-      scheduler.off('start', onChange);
-      scheduler.off('finish', onChange);
-      scheduler.off('error', onChange);
+      scheduler.off("start", onChange);
+      scheduler.off("finish", onChange);
+      scheduler.off("error", onChange);
     };
   }, [scheduler]);
 

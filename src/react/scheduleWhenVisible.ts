@@ -1,4 +1,4 @@
-import type { TaskScheduler } from '../scheduler/TaskScheduler';
+import type { TaskScheduler } from "../scheduler/TaskScheduler";
 
 /**
  * Schedules a task when an element becomes visible (or invisible).
@@ -20,7 +20,7 @@ export function scheduleWhenVisible(
       delay,
       dedupeKey,
       priority: 0,
-      meta: { source: 'viewport' },
+      meta: { source: "viewport" },
     });
   } else {
     scheduler.request({
@@ -30,7 +30,7 @@ export function scheduleWhenVisible(
       delay: 2000,
       dedupeKey,
       priority: 5,
-      meta: { source: 'background' },
+      meta: { source: "background" },
     });
   }
 }
