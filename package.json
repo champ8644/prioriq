@@ -1,6 +1,6 @@
 {
   "name": "prioriq",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A lightweight, extensible task scheduling system for React apps with concurrency, deduplication, timeout, and middleware support.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
