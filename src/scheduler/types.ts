@@ -14,18 +14,19 @@ export interface RequestOptions {
   timeoutMs?: number;
 }
 
-export type MiddlewareContext = {
+export type MiddlewareContext<Meta = Record<string, any>> = {
   id: string;
   group: string;
   task: Task;
   dedupeKey?: string;
-  meta?: Record<string, any>;
+  priority?: number;
+  meta?: Meta;
 };
 
 export type Middleware = (
   ctx: MiddlewareContext,
-  next: () => Promise<any>
-) => Promise<any>;
+  next: () => Promise<void>
+) => Promise<void>;
 
 export type Events = {
   start: { group: string; id: string };

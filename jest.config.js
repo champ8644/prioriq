@@ -2,21 +2,21 @@ module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
 
-  // Treat .ts files as ESM if need true ESM support; otherwise we force ts-jest to compile to CJS
   transform: {
     "^.+\\.[tj]sx?$": [
       "ts-jest",
       {
-        // compile modules down to CommonJS so "import" in node_modules works
+        // Compile modules down to CommonJS so Jest can run them
         useESM: false,
+
+        // Point to your TS config
+        tsconfig: "tsconfig.json",
       },
     ],
   },
 
-  // By default everything under node_modules is skipped.
-  // This pattern says "except p-queue and eventemitter3"—so they get transformed.
+  // Transform p-queue, p-timeout, and eventemitter3 (ESM) through ts-jest
   transformIgnorePatterns: [
-    // transform ESM in p-queue and its ESM dependencies:
     "node_modules/(?!(p-queue|p-timeout|eventemitter3)/)",
   ],
 
@@ -27,10 +27,9 @@ module.exports = {
   coverageDirectory: "coverage",
   testMatch: ["**/test/**/*.test.ts"],
 
-  globals: {
-    "ts-jest": {
-      // keep moduleInterop if we were using it
-      tsconfig: "tsconfig.json",
-    },
+  fakeTimers: {
+    legacyFakeTimers: true,
   },
+
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
 };

@@ -19,6 +19,7 @@ export class TaskScheduler {
   private queues = new Map<string, PQueue>();
   private pending = new Map<string, NodeJS.Timeout>();
   private deduping = new Set<string>();
+  private dedupeKeyMap: Map<string, string> = new Map();
   private abortControllers = new Map<string, AbortController>();
   private middlewares: Middleware[] = [];
   private breaker = new CircuitBreaker();
@@ -76,6 +77,7 @@ export class TaskScheduler {
 
     const enqueue = () => {
       this.pending.delete(key);
+      if (dedupeKey) this.dedupeKeyMap.delete(dedupeKey);
       this.enqueueTask(queue, {
         id,
         task,
@@ -92,6 +94,7 @@ export class TaskScheduler {
     if (debounceMs) {
       if (this.pending.has(key)) clearTimeout(this.pending.get(key)!);
       this.pending.set(key, setTimeout(enqueue, debounceMs));
+      if (dedupeKey) this.dedupeKeyMap.set(dedupeKey, key);
       return;
     }
 
@@ -131,21 +134,32 @@ export class TaskScheduler {
     } = options;
 
     const finalPriority = autoPriority ? autoPriority() : priority;
-    const ctx: MiddlewareContext = { id, group, task, dedupeKey, meta };
-    const runner = composeMiddleware(this.middlewares, ctx);
+    const ctx: MiddlewareContext<{ source?: string }> = {
+      id,
+      group,
+      task,
+      dedupeKey,
+      meta,
+    };
+    const runner = composeMiddleware(this.middlewares);
 
     const signal = new AbortController();
     const controllerId = `${group}:${id}`;
     this.abortControllers.set(controllerId, signal);
 
     const wrappedTask = async () => {
+      // ** Circuit-breaker at execution time **
+      if (this.breaker.isOpen(group)) {
+        // silently skip running the task
+        return;
+      }
       this.emitter.emit("start", { group, id });
 
       try {
         if (idle) await runWhenIdle();
         const result = timeoutMs
-          ? await withTimeout(runner(), timeoutMs, id)
-          : await runner();
+          ? await withTimeout(runner(ctx, task), timeoutMs, id)
+          : await runner(ctx, task);
 
         this.breaker.clear(group);
         this.emitter.emit("finish", { group, id });
@@ -161,10 +175,14 @@ export class TaskScheduler {
     };
 
     if (dedupeKey) this.deduping.add(dedupeKey);
-    queue.add(wrappedTask, { priority: finalPriority });
+    const p = queue.add(wrappedTask, { priority: finalPriority });
+    p.catch(() => {
+      /* already emitted 'error', so just swallow it */
+    });
   }
 
   cancel(opts: { id?: string; dedupeKey?: string }) {
+    // Cancel by ID
     const key = opts.id
       ? [...this.pending.keys()].find((k) => k.endsWith(`:${opts.id}`))
       : null;
@@ -172,8 +190,19 @@ export class TaskScheduler {
       clearTimeout(this.pending.get(key)!);
       this.pending.delete(key);
     }
-    if (opts.dedupeKey) this.deduping.delete(opts.dedupeKey);
 
+    // Cancel by dedupeKey
+    if (opts.dedupeKey) {
+      const pendingKey = this.dedupeKeyMap.get(opts.dedupeKey);
+      if (pendingKey && this.pending.has(pendingKey)) {
+        clearTimeout(this.pending.get(pendingKey)!);
+        this.pending.delete(pendingKey);
+      }
+      this.dedupeKeyMap.delete(opts.dedupeKey);
+      this.deduping.delete(opts.dedupeKey);
+    }
+
+    // Abort controller cleanup
     if (opts.id) {
       const controllerId = [...this.abortControllers.keys()].find((k) =>
         k.endsWith(`:${opts.id}`)

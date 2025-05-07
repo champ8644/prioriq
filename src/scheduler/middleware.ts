@@ -5,26 +5,19 @@ import type { Middleware, MiddlewareContext } from "./types";
  * similar to Koa or Express middleware chains.
  */
 export function composeMiddleware(
-  middlewares: Middleware[],
-  ctx: MiddlewareContext
-): () => Promise<any> {
-  return () => {
+  middleware: Middleware[]
+): (ctx: MiddlewareContext, next: () => Promise<void>) => Promise<void> {
+  return function composed(ctx, next) {
     let index = -1;
+    return dispatch(0);
 
-    const dispatch = (i: number): Promise<any> => {
+    function dispatch(i: number): Promise<void> {
       if (i <= index) {
         return Promise.reject(new Error("next() called multiple times"));
       }
       index = i;
-
-      const fn = middlewares[i];
-      if (!fn) {
-        return ctx.task();
-      }
-
+      const fn = middleware[i] || next;
       return fn(ctx, () => dispatch(i + 1));
-    };
-
-    return dispatch(0);
+    }
   };
 }
