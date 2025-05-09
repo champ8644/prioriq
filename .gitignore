@@ -3,4 +3,4 @@ dist/
 coverage/
 .env
 *.log
-tools/
+tools/dump
