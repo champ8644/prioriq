@@ -1,7 +1,6 @@
 /** @type {import('jest').Config} */
 export default {
   preset: "ts-jest/presets/default-esm",
-  testEnvironment: "node",
 
   transform: {
     "^.+\\.[tj]sx?$": [
@@ -17,18 +16,32 @@ export default {
     "node_modules/(?!(p-queue|p-timeout|eventemitter3)/)",
   ],
 
-  moduleFileExtensions: ["ts", "tsx", "js"],
-  roots: ["<rootDir>/test"],
+  moduleNameMapper: {
+    // Required to resolve .js imports in ESM
+    "^(\\.{1,2}/.*)\\.js$": "$1",
+  },
 
-  // ✅ Use testMatch instead of testRegex
-  testMatch: ["**/test/**/*.test.ts", "**/test/**/*.test.tsx"],
+  moduleFileExtensions: ["ts", "tsx", "js"],
 
   collectCoverage: true,
   coverageDirectory: "coverage",
 
-  fakeTimers: {
-    legacyFakeTimers: true,
-  },
-
-  setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
+  projects: [
+    {
+      displayName: "core",
+      testEnvironment: "node",
+      testMatch: ["**/test/**/*.test.ts"],
+      fakeTimers: { legacyFakeTimers: true },
+      setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
+      roots: ["<rootDir>/test"],
+    },
+    {
+      displayName: "react",
+      testEnvironment: "jsdom",
+      testMatch: ["**/test/**/*.test.tsx"],
+      fakeTimers: { legacyFakeTimers: true },
+      setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
+      roots: ["<rootDir>/test"],
+    },
+  ],
 };

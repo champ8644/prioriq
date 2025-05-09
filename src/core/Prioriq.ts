@@ -178,7 +178,7 @@ export class Prioriq {
     const queue = this.queues.get(group);
     if (!queue) return;
     const n = toNumber(newPriority);
-    const task = [...(queue as any).queue].find(
+    const task = [...(queue as any)._queue].find(
       (t: any) => t.options?.id === id
     );
     if (task) {
