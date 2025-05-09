@@ -2,19 +2,19 @@ import type { PriorityInput } from "./taskUtils";
 
 export type Task = () => Promise<any>;
 
-/** Shared structure for all tasks */
+/** Minimal base type shared by all task descriptors */
 export interface BaseTaskOptions<Meta = Record<string, any>> {
   id: string;
-  task: Task;
   autoPriority?: () => number;
   dedupeKey?: string;
-  meta?: Meta;
   timeoutMs?: number;
+  meta?: Meta;
 }
 
 /** Public-facing API for scheduling a task */
 export interface RequestOptions<Meta = Record<string, any>>
   extends BaseTaskOptions<Meta> {
+  task: Task;
   group?: string;
   priority?: PriorityInput;
   delay?: number;
@@ -28,6 +28,7 @@ export interface QueuedTaskOptions<Meta = Record<string, any>>
   group: string;
   priority: number;
   idle: boolean;
+  task: Task;
 }
 
 export type MiddlewareContext<Meta = Record<string, any>> =

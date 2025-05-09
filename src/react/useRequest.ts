@@ -6,38 +6,26 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 import { useCallback } from "react";
-import type { Prioriq } from "../core/Prioriq";
+import { usePrioriq } from "./PrioriqProvider";
 import { fetchCoordinator } from "./internal/fetchCoordinator";
-
-interface UseRequestOptions<T>
-  extends Omit<UseQueryOptions<T>, "queryKey" | "queryFn"> {
-  id: string;
-  queryKey: QueryKey;
-  fetchFn: () => Promise<T>;
-  scheduler: Prioriq;
-  group?: string;
-  priority?: number | "HOT" | "WARM" | "COLD";
-  delay?: number;
-  debounceMs?: number;
-  dedupeKey?: string;
-  idle?: boolean;
-  timeoutMs?: number;
-  meta?: Record<string, any>;
-}
+import { UseRequestOptions } from "./types";
 
 /**
  * React hook for fetching data via Prioriq and React Query.
  *
+ * Scheduler instance is pulled from PrioriqContext (required).
  * Supports all scheduling features: priority, delay, debounce, dedupe, and timeout.
  */
 export function useRequest<T>(
   options: UseRequestOptions<T>
 ): UseQueryResult<T> {
+  const scheduler = usePrioriq();
+  const queryClient = useQueryClient();
+
   const {
     id,
     queryKey,
     fetchFn,
-    scheduler,
     group,
     priority,
     delay,
@@ -48,8 +36,6 @@ export function useRequest<T>(
     meta,
     ...queryOptions
   } = options;
-
-  const queryClient = useQueryClient();
 
   const coordinator = useCallback(() => {
     return fetchCoordinator(scheduler, {
