@@ -1,4 +1,4 @@
-(global as any).requestIdleCallback = (cb: IdleRequestCallback) =>
+(globalThis as any).requestIdleCallback = (cb: any) =>
   setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 50 }), 0);
 
-(global as any).cancelIdleCallback = (id: number) => clearTimeout(id);
+(globalThis as any).cancelIdleCallback = (id: any) => clearTimeout(id);

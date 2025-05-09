@@ -39,3 +39,11 @@ export function withTimeout<T>(
       });
   });
 }
+
+export function itemsOf(q: any) {
+  return Array.isArray(q?._queue)
+    ? q._queue
+    : Array.isArray(q?.queue)
+    ? q.queue
+    : [];
+}

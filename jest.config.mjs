@@ -1,47 +1,28 @@
 /** @type {import('jest').Config} */
 export default {
+  // ts-jest in pure-ESM mode
   preset: "ts-jest/presets/default-esm",
 
+  // All tests will run in the Node runtime **unless** a file asks for jsdom
+  testEnvironment: "node",
+
   transform: {
-    "^.+\\.[tj]sx?$": [
-      "ts-jest",
-      {
-        useESM: true,
-        tsconfig: "tsconfig.json",
-      },
-    ],
+    "^.+\\.[tj]sx?$": ["ts-jest", { useESM: true, tsconfig: "tsconfig.json" }],
   },
 
   transformIgnorePatterns: [
     "node_modules/(?!(p-queue|p-timeout|eventemitter3)/)",
   ],
 
-  moduleNameMapper: {
-    // Required to resolve .js imports in ESM
-    "^(\\.{1,2}/.*)\\.js$": "$1",
-  },
-
   moduleFileExtensions: ["ts", "tsx", "js"],
+  roots: ["<rootDir>/test"],
+
+  testMatch: ["**/test/**/*.test.ts", "**/test/**/*.test.tsx"],
 
   collectCoverage: true,
   coverageDirectory: "coverage",
 
-  projects: [
-    {
-      displayName: "core",
-      testEnvironment: "node",
-      testMatch: ["**/test/**/*.test.ts"],
-      fakeTimers: { legacyFakeTimers: true },
-      setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
-      roots: ["<rootDir>/test"],
-    },
-    {
-      displayName: "react",
-      testEnvironment: "jsdom",
-      testMatch: ["**/test/**/*.test.tsx"],
-      fakeTimers: { legacyFakeTimers: true },
-      setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
-      roots: ["<rootDir>/test"],
-    },
-  ],
+  fakeTimers: { legacyFakeTimers: true },
+
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
 };

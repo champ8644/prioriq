@@ -33,6 +33,8 @@ export class Prioriq {
   private pending = new Map<string, NodeJS.Timeout>();
   private deduping = new Set<string>();
   private dedupeKeyMap = new Map<string, string>();
+  private everDedupe = new Set<string>();
+  private lastRequest = new Map<string, RequestOptions>();
   private abortControllers = new Map<string, AbortController>();
   private middlewares: Middleware[] = [];
   private breaker = new CircuitBreaker();
@@ -87,7 +89,8 @@ export class Prioriq {
       timeoutMs,
     } = options;
 
-    const dedupeKey: string = options.dedupeKey ?? id;
+    const dedupeKey = options.dedupeKey ?? id;
+    if (this.everDedupe.has(dedupeKey)) return;
     const priority = toNumber(rawPriority as PriorityInput);
     if (this.breaker.isOpen(group)) return;
 
@@ -129,6 +132,8 @@ export class Prioriq {
     this.taskCache.set(key, fullOpts);
     /* -------------------------------------------------------------- */
 
+    this.lastRequest.set(key, fullOpts);
+
     this.emitter.emit("queued", { group, id });
 
     const enqueue = () => {
@@ -168,24 +173,26 @@ export class Prioriq {
   /** Force re-execution of last recorded task */
   refresh(id: string, group = "default") {
     const key = `${group}:${id}`;
-    const prev = this.taskCache.get(key);
+    const prev = this.lastRequest.get(key);
     if (!prev) throw new Error(`No prior request() for id '${id}'`);
     this.cancel({ id });
     this.request(prev);
   }
 
-  prioritize(id: string, newPriority: PriorityInput, group = "default") {
-    const queue = this.queues.get(group);
+  prioritize(id: string, newPriorityInput: PriorityInput, group = "default") {
+    const queue: any = this.queues.get(group);
     if (!queue) return;
-    const n = toNumber(newPriority);
-    const task = [...(queue as any)._queue].find(
+
+    const entry = [...(queue._queue ?? queue.queue)].find(
       (t: any) => t.options?.id === id
     );
-    if (task) {
-      task.priority = n;
-      (queue as any).queue.sort((a: any, b: any) => a.priority - b.priority);
-      this.emitter.emit("updated", { group, id, priority: n });
-    }
+    if (!entry) return;
+
+    entry.priority = toNumber(newPriorityInput);
+    (queue._queue ?? queue.queue).sort(
+      (a: any, b: any) => a.priority - b.priority
+    );
+    this.emitter.emit("updated", { group, id, priority: entry.priority });
   }
 
   cancel(opts: { id?: string; dedupeKey?: string }) {
@@ -222,7 +229,7 @@ export class Prioriq {
     }
 
     if (group && id) {
-      this.emitter.emit("cancelled", { group, id });
+      this.emitter.emit("cancelled", { group: group ?? "default", id });
       this.taskCache.delete(`${group}:${id}`);
     }
   }
@@ -233,7 +240,7 @@ export class Prioriq {
         clearTimeout(this.pending.get(key)!);
         this.pending.delete(key);
         const id = key.split(":")[1];
-        this.emitter.emit("cancelled", { group, id });
+        this.emitter.emit("cancelled", { group: group ?? "default", id });
         this.taskCache.delete(key);
       }
     }
@@ -242,7 +249,7 @@ export class Prioriq {
         controller.abort();
         this.abortControllers.delete(key);
         const id = key.split(":")[1];
-        this.emitter.emit("cancelled", { group, id });
+        this.emitter.emit("cancelled", { group: group ?? "default", id });
         this.taskCache.delete(key);
       }
     }

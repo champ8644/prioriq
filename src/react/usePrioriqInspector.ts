@@ -25,11 +25,8 @@ export function usePrioriqInspector(
   const [state, setState] = useState(getSnapshot);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setState(getSnapshot());
-    }, intervalMs);
-
-    return () => clearInterval(interval);
+    const id = setInterval(() => setState(prioriq.snapshot(group)), intervalMs);
+    return () => clearInterval(id);
   }, [prioriq, group, intervalMs]);
 
   return state;
