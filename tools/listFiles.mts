@@ -7,7 +7,7 @@ import { join } from "node:path";
 // CONFIG
 const config = {
   includes: [
-    "src/**", // everything under src/
+    "test/**", // everything under src/
     "*", // only shallow root-level files
   ],
   excludes: [
@@ -53,7 +53,7 @@ const results = filteredPaths.map((relativePath) => ({
 
 const output = results.map((f) => `${f.name}\n---\n${f.content}`).join("\n\n");
 
-writeFileSync("tools/dump/file-list.txt", output, "utf-8");
+writeFileSync("dump/file-list.txt", output, "utf-8");
 console.log(
-  `File list saved to tools/dump/file-list.txt (matched ${results.length} files)`
+  `File list saved to dump/file-list.txt (matched ${results.length} files)`
 );

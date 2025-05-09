@@ -107,18 +107,21 @@ export class Prioriq {
       return; // let existing timer fire
     }
 
-    // 2. If already in PQueue → reprioritise and emit 'updated'
-    const queuedTask = [...(queue as any).queue].find(
-      (t: any) => t.options?.id === id
-    );
-    if (queuedTask) {
-      if (priority !== undefined) {
-        queuedTask.priority = priority;
-        (queue as any).queue.sort((a: any, b: any) => a.priority - b.priority);
-        this.emitter.emit("updated", { group, id, priority });
+    // Try to access internal queue (undocumented API, guarded carefully)
+    const queueItems = (queue as any)._queue;
+    if (queueItems && typeof queueItems[Symbol.iterator] === "function") {
+      for (const task of queueItems) {
+        if (task.options?.id === id) {
+          if (priority !== undefined) {
+            task.priority = priority;
+            // No manual sort! p-queue handles priority heap internally
+            this.emitter.emit("updated", { group, id, priority });
+          }
+          return;
+        }
       }
-      return;
     }
+
     /* -------------------------------------------------------------- */
 
     /* ---------- store for refresh() ------------------------------- */

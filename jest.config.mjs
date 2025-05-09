@@ -1,31 +1,30 @@
-module.exports = {
-  preset: "ts-jest",
+/** @type {import('jest').Config} */
+export default {
+  preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
 
   transform: {
     "^.+\\.[tj]sx?$": [
       "ts-jest",
       {
-        // Compile modules down to CommonJS so Jest can run them
-        useESM: false,
-
-        // Point to your TS config
+        useESM: true,
         tsconfig: "tsconfig.json",
       },
     ],
   },
 
-  // Transform p-queue, p-timeout, and eventemitter3 (ESM) through ts-jest
   transformIgnorePatterns: [
     "node_modules/(?!(p-queue|p-timeout|eventemitter3)/)",
   ],
 
-  moduleFileExtensions: ["ts", "js"],
+  moduleFileExtensions: ["ts", "tsx", "js"],
   roots: ["<rootDir>/test"],
+
+  // ✅ Use testMatch instead of testRegex
+  testMatch: ["**/test/**/*.test.ts", "**/test/**/*.test.tsx"],
 
   collectCoverage: true,
   coverageDirectory: "coverage",
-  testMatch: ["**/test/**/*.test.ts"],
 
   fakeTimers: {
     legacyFakeTimers: true,
