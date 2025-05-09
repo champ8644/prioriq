@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { cwd } from "node:process";
 import { join } from "node:path";
 
-// ✅ CONFIG
+// CONFIG
 const config = {
   includes: [
     "src/**", // everything under src/
@@ -19,7 +19,7 @@ const config = {
   ],
 };
 
-// ✅ Load and merge .gitignore + config excludes
+// Load and merge .gitignore + config excludes
 const ig = ignore();
 try {
   const gitignorePath = join(cwd(), ".gitignore");
@@ -32,7 +32,7 @@ try {
 }
 ig.add(config.excludes);
 
-// ✅ Glob match files
+// Glob match files
 const matchedPaths = fg.sync(config.includes, {
   cwd: cwd(),
   onlyFiles: true,
@@ -40,12 +40,12 @@ const matchedPaths = fg.sync(config.includes, {
   absolute: false,
 });
 
-// ✅ Filter against .gitignore
+// Filter against .gitignore
 const filteredPaths = matchedPaths
   .map((path) => path.replace(/\\/g, "/"))
   .filter((path) => !ig.ignores(path));
 
-// ✅ Read file contents
+// Read file contents
 const results = filteredPaths.map((relativePath) => ({
   name: "./" + relativePath,
   content: readFileSync(relativePath, "utf8"),
@@ -55,5 +55,5 @@ const output = results.map((f) => `${f.name}\n---\n${f.content}`).join("\n\n");
 
 writeFileSync("tools/dump/file-list.txt", output, "utf-8");
 console.log(
-  `✅ File list saved to tools/dump/file-list.txt (matched ${results.length} files)`
+  `File list saved to tools/dump/file-list.txt (matched ${results.length} files)`
 );
