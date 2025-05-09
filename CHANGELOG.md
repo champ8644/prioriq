@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.2.0](https://github.com/champ8644/prioriq/compare/v2.1.0...v2.2.0) (2025-05-09)
+
+
+### ✨ Features
+
+* **core,react:** introduce ScheduleOptions and refactor request options for enhanced flexibility ([db012a5](https://github.com/champ8644/prioriq/commit/db012a585f8d8af296c191669c408a2a7abf4c24))
+
 ## [2.1.0](https://github.com/champ8644/prioriq/compare/v1.1.0...v2.1.0) (2025-05-09)
 
 
