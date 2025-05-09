@@ -1,5 +1,4 @@
 // src/core/Prioriq.ts
-
 import PQueue from "p-queue";
 import mitt from "mitt";
 import {
@@ -11,7 +10,6 @@ import {
 import { composeMiddleware } from "./middleware";
 import { CircuitBreaker } from "./circuitBreaker";
 import type {
-  Task,
   RequestOptions,
   Middleware,
   MiddlewareContext,
@@ -40,16 +38,21 @@ export class Prioriq {
   private breaker = new CircuitBreaker();
   private emitter = mitt<Events>();
 
+  /** stores the last full RequestOptions per task for `.refresh()` */
+  private taskCache = new Map<string, RequestOptions>();
+
   constructor(private defaultConcurrency = 4) {}
 
-  /** Ensure a queue exists for the group */
+  /* ------------------------------------------------------------------ */
+  /*  Public API                                                        */
+  /* ------------------------------------------------------------------ */
+
   addQueue(group: string, concurrency = this.defaultConcurrency) {
     if (!this.queues.has(group)) {
       this.queues.set(group, new PQueue({ concurrency }));
     }
   }
 
-  /** Configure circuit breaker for a group */
   configureGroup(
     group: string,
     config: { maxFailures: number; cooldownMs: number }
@@ -57,22 +60,19 @@ export class Prioriq {
     this.breaker.configure(group, config);
   }
 
-  /** Add middleware */
   use(middleware: Middleware) {
     this.middlewares.push(middleware);
   }
 
-  /** Subscribe to scheduler events */
   on<K extends keyof Events>(type: K, handler: (e: Events[K]) => void) {
     this.emitter.on(type, handler);
   }
 
-  /** Unsubscribe from events */
   off<K extends keyof Events>(type: K, handler: (e: Events[K]) => void) {
     this.emitter.off(type, handler);
   }
 
-  /** Enqueue a task */
+  /** Main entry — queue or bump a task */
   request(options: RequestOptions) {
     const {
       id,
@@ -81,28 +81,56 @@ export class Prioriq {
       priority: rawPriority = 0,
       delay = 0,
       debounceMs,
-      dedupeKey,
       idle = false,
       autoPriority,
       meta,
       timeoutMs,
     } = options;
 
-    // Convert priority input ('HOT'|'WARM'|'COLD'|number) to numeric
+    const dedupeKey: string = options.dedupeKey ?? id;
     const priority = toNumber(rawPriority as PriorityInput);
-
-    if (!this.queues.has(group)) this.addQueue(group);
     if (this.breaker.isOpen(group)) return;
 
+    if (!this.queues.has(group)) this.addQueue(group);
     const queue = this.queues.get(group)!;
     const key = `${group}:${id}`;
-    if (dedupeKey && this.deduping.has(dedupeKey)) return;
+
+    /* ---------- queue-or-bump fast path ---------------------------- */
+    // 1. If already pending (debounce or delay) → update stored opts & priority
+    if (this.pending.has(key)) {
+      if (priority !== undefined) {
+        // re-store latest options for when timer fires
+        const stored = this.taskCache.get(key)!;
+        stored.priority = priority;
+        this.taskCache.set(key, stored);
+      }
+      return; // let existing timer fire
+    }
+
+    // 2. If already in PQueue → reprioritise and emit 'updated'
+    const queuedTask = [...(queue as any).queue].find(
+      (t: any) => t.options?.id === id
+    );
+    if (queuedTask) {
+      if (priority !== undefined) {
+        queuedTask.priority = priority;
+        (queue as any).queue.sort((a: any, b: any) => a.priority - b.priority);
+        this.emitter.emit("updated", { group, id, priority });
+      }
+      return;
+    }
+    /* -------------------------------------------------------------- */
+
+    /* ---------- store for refresh() ------------------------------- */
+    const fullOpts: RequestOptions = { ...options, id, group, dedupeKey };
+    this.taskCache.set(key, fullOpts);
+    /* -------------------------------------------------------------- */
 
     this.emitter.emit("queued", { group, id });
 
     const enqueue = () => {
       this.pending.delete(key);
-      if (dedupeKey) this.dedupeKeyMap.delete(dedupeKey);
+      this.dedupeKeyMap.delete(dedupeKey);
 
       this.enqueueTask(queue, {
         id,
@@ -120,104 +148,43 @@ export class Prioriq {
     if (debounceMs) {
       if (this.pending.has(key)) clearTimeout(this.pending.get(key)!);
       this.pending.set(key, setTimeout(enqueue, debounceMs));
-      if (dedupeKey) this.dedupeKeyMap.set(dedupeKey, key);
+      this.dedupeKeyMap.set(dedupeKey, key);
       return;
     }
 
     if (delay > 0) {
       if (this.pending.has(key)) return;
       this.pending.set(key, setTimeout(enqueue, delay));
-      if (dedupeKey) this.dedupeKeyMap.set(dedupeKey, key);
+      this.dedupeKeyMap.set(dedupeKey, key);
       return;
     }
 
     enqueue();
   }
 
-  /** Internal: wrap and add task to PQueue */
-  private enqueueTask(queue: PQueue, options: QueuedTaskOptions) {
-    const {
-      id,
-      task,
-      group,
-      priority,
-      idle,
-      autoPriority,
-      dedupeKey,
-      meta,
-      timeoutMs,
-    } = options;
-    const finalPriority = autoPriority ? autoPriority() : priority;
-
-    const ctx: MiddlewareContext = {
-      id,
-      group,
-      task,
-      dedupeKey,
-      meta,
-      priority: finalPriority,
-      idle,
-      autoPriority,
-      timeoutMs,
-    };
-    const runner = composeMiddleware(this.middlewares);
-
-    const signal = new AbortController();
-    const controllerId = `${group}:${id}`;
-    this.abortControllers.set(controllerId, signal);
-
-    const wrappedTask = async () => {
-      if (this.breaker.isOpen(group)) return;
-      this.emitter.emit("started", { group, id });
-
-      try {
-        if (idle) await runWhenIdle();
-        const result = timeoutMs
-          ? await withTimeout(runner(ctx, task), timeoutMs, id)
-          : await runner(ctx, task);
-
-        this.breaker.clear(group);
-        this.emitter.emit("fulfilled", { group, id, result });
-        return result;
-      } catch (error) {
-        this.emitter.emit("rejected", { group, id, error });
-        this.breaker.recordFailure(group);
-        throw error;
-      } finally {
-        if (dedupeKey) this.deduping.delete(dedupeKey);
-        this.abortControllers.delete(controllerId);
-      }
-    };
-
-    if (dedupeKey) this.deduping.add(dedupeKey);
-    queue.add(wrappedTask, { priority: finalPriority }).catch(() => {});
+  /** Force re-execution of last recorded task */
+  refresh(id: string, group = "default") {
+    const key = `${group}:${id}`;
+    const prev = this.taskCache.get(key);
+    if (!prev) throw new Error(`No prior request() for id '${id}'`);
+    this.cancel({ id });
+    this.request(prev);
   }
 
-  /**
-   * Change priority of an already-queued task.
-   */
-  prioritize(id: string, newPriorityInput: PriorityInput, group = "default") {
+  prioritize(id: string, newPriority: PriorityInput, group = "default") {
     const queue = this.queues.get(group);
     if (!queue) return;
-
-    const newPriority = toNumber(newPriorityInput);
-    const tasks = [...(queue as any).queue] as Array<{
-      options: any;
-      priority: number;
-    }>;
-    for (const task of tasks) {
-      if (task.options?.id === id) {
-        task.priority = newPriority;
-        (queue as any).queue.sort((a: any, b: any) => a.priority - b.priority);
-        this.emitter.emit("updated", { group, id, priority: newPriority });
-        break;
-      }
+    const n = toNumber(newPriority);
+    const task = [...(queue as any).queue].find(
+      (t: any) => t.options?.id === id
+    );
+    if (task) {
+      task.priority = n;
+      (queue as any).queue.sort((a: any, b: any) => a.priority - b.priority);
+      this.emitter.emit("updated", { group, id, priority: n });
     }
   }
 
-  /**
-   * Cancel a single task by id or dedupeKey.
-   */
   cancel(opts: { id?: string; dedupeKey?: string }) {
     let group: string | undefined;
     let id: string | undefined;
@@ -231,6 +198,12 @@ export class Prioriq {
         group = controllerId.split(":")[0];
         this.abortControllers.get(controllerId)?.abort();
         this.abortControllers.delete(controllerId);
+      }
+      // also clear any pending timer
+      const key = `${group ?? "default"}:${id}`;
+      if (this.pending.has(key)) {
+        clearTimeout(this.pending.get(key)!);
+        this.pending.delete(key);
       }
     }
 
@@ -247,12 +220,10 @@ export class Prioriq {
 
     if (group && id) {
       this.emitter.emit("cancelled", { group, id });
+      this.taskCache.delete(`${group}:${id}`);
     }
   }
 
-  /**
-   * Cancel all tasks in a group.
-   */
   cancelGroup(group: string) {
     for (const key of this.pending.keys()) {
       if (key.startsWith(`${group}:`)) {
@@ -260,6 +231,7 @@ export class Prioriq {
         this.pending.delete(key);
         const id = key.split(":")[1];
         this.emitter.emit("cancelled", { group, id });
+        this.taskCache.delete(key);
       }
     }
     for (const [key, controller] of this.abortControllers.entries()) {
@@ -268,15 +240,11 @@ export class Prioriq {
         this.abortControllers.delete(key);
         const id = key.split(":")[1];
         this.emitter.emit("cancelled", { group, id });
+        this.taskCache.delete(key);
       }
     }
   }
 
-  /**
-   * Snapshot queue state.
-   * If group is provided, returns stats for that group only.
-   * Otherwise returns stats for all groups.
-   */
   snapshot(group?: string) {
     const stats: Record<
       string,
@@ -286,11 +254,73 @@ export class Prioriq {
       stats[grp] = {
         queued: queue.size,
         running: queue.pending,
-        pending: Array.from(this.pending.keys()).filter((k) =>
-          k.startsWith(`${grp}:`)
-        ).length,
+        pending: [...this.pending.keys()].filter((k) => k.startsWith(`${grp}:`))
+          .length,
       };
     }
     return group ? stats[group] : stats;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Internals                                                         */
+  /* ------------------------------------------------------------------ */
+
+  private enqueueTask(queue: PQueue, opts: QueuedTaskOptions) {
+    const {
+      id,
+      task,
+      group,
+      priority,
+      idle,
+      autoPriority,
+      dedupeKey,
+      meta,
+      timeoutMs,
+    } = opts;
+    const finalPriority = autoPriority ? autoPriority() : priority;
+
+    const ctx: MiddlewareContext = {
+      id,
+      group,
+      task,
+      dedupeKey,
+      meta,
+      priority: finalPriority,
+      idle,
+      autoPriority,
+      timeoutMs,
+    };
+    const runPipeline = composeMiddleware(this.middlewares);
+
+    const controllerId = `${group}:${id}`;
+    const abortCtl = new AbortController();
+    this.abortControllers.set(controllerId, abortCtl);
+
+    const wrapped = async () => {
+      if (this.breaker.isOpen(group)) return;
+      this.emitter.emit("started", { group, id });
+
+      try {
+        if (idle) await runWhenIdle();
+        const result = timeoutMs
+          ? await withTimeout(runPipeline(ctx, task), timeoutMs, id)
+          : await runPipeline(ctx, task);
+
+        this.breaker.clear(group);
+        this.emitter.emit("fulfilled", { group, id, result });
+        return result;
+      } catch (err) {
+        this.emitter.emit("rejected", { group, id, error: err });
+        this.breaker.recordFailure(group);
+        throw err;
+      } finally {
+        this.deduping.delete(dedupeKey);
+        this.abortControllers.delete(controllerId);
+        this.taskCache.delete(`${group}:${id}`);
+      }
+    };
+
+    this.deduping.add(dedupeKey);
+    queue.add(wrapped, { priority: finalPriority }).catch(() => {});
   }
 }

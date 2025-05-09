@@ -1,35 +1,79 @@
 import type { PriorityInput } from "./taskUtils";
 
+/* =================================================================== *
+ *  Fundamental primitives                                             *
+ * =================================================================== */
+
+/** Any asynchronous unit of work that Prioriq can execute. */
 export type Task = () => Promise<any>;
 
-/** Minimal base type shared by all task descriptors */
+/**
+ * Smallest shared option set.
+ * Everything here is framework-agnostic and optional
+ * except for the mandatory **id**.
+ */
 export interface BaseTaskOptions<Meta = Record<string, any>> {
+  /* identity ------------------------------------------------------- */
   id: string;
+
+  /* priority ------------------------------------------------------- */
+  /** Callback evaluated at enqueue time to determine priority. */
   autoPriority?: () => number;
-  dedupeKey?: string;
-  timeoutMs?: number;
+
+  /* timing --------------------------------------------------------- */
+  delay?: number; // absolute delay before enqueue (ms)
+  debounceMs?: number; // debounce window (ms)
+  timeoutMs?: number; // hard timeout for the task (ms)
+
+  /* user metadata -------------------------------------------------- */
   meta?: Meta;
 }
 
-/** Public-facing API for scheduling a task */
-export interface RequestOptions<Meta = Record<string, any>>
+/**
+ * Public-facing scheduling knobs, used by:
+ *  • scheduler.request()
+ *  • React helpers (useRequest)
+ * Extends BaseTaskOptions with queue-specific controls.
+ */
+export interface ScheduleOptions<Meta = Record<string, any>>
   extends BaseTaskOptions<Meta> {
-  task: Task;
-  group?: string;
-  priority?: PriorityInput;
-  delay?: number;
-  debounceMs?: number;
-  idle?: boolean;
+  /* deduplication -------------------------------------------------- */
+  dedupeKey?: string;
+
+  /* queue / priority ---------------------------------------------- */
+  group?: string; // logical queue name
+  priority?: PriorityInput; // numeric or symbolic
+  idle?: boolean; // wait for requestIdleCallback
 }
 
-/** Normalized internal task form used after parsing */
+/* =================================================================== *
+ *  Core-side shapes                                                   *
+ * =================================================================== */
+
+/** Shape accepted by `scheduler.request()`. */
+export interface RequestOptions<Meta = Record<string, any>>
+  extends ScheduleOptions<Meta> {
+  task: Task;
+}
+
+/**
+ * Fully normalised form used internally:
+ *  • all optional fields resolved
+ *  • priority is numeric
+ *  • dedupeKey is guaranteed
+ */
 export interface QueuedTaskOptions<Meta = Record<string, any>>
   extends BaseTaskOptions<Meta> {
   group: string;
   priority: number;
   idle: boolean;
+  dedupeKey: string;
   task: Task;
 }
+
+/* =================================================================== *
+ *  Middleware & events                                                *
+ * =================================================================== */
 
 export type MiddlewareContext<Meta = Record<string, any>> =
   QueuedTaskOptions<Meta>;
@@ -39,6 +83,7 @@ export type Middleware = (
   next: () => Promise<void>
 ) => Promise<void>;
 
+/** Lifecycle events emitted by Prioriq. */
 export type Events = {
   queued: Pick<QueuedTaskOptions, "group" | "id">;
   started: Pick<QueuedTaskOptions, "group" | "id">;
