@@ -1,6 +1,13 @@
+// src/core/Prioriq.ts
+
 import PQueue from "p-queue";
 import mitt from "mitt";
-import { withTimeout, runWhenIdle } from "./taskUtils";
+import {
+  runWhenIdle,
+  withTimeout,
+  toNumber,
+  type PriorityInput,
+} from "./taskUtils";
 import { composeMiddleware } from "./middleware";
 import { CircuitBreaker } from "./circuitBreaker";
 import type {
@@ -9,17 +16,25 @@ import type {
   Middleware,
   MiddlewareContext,
   Events,
+  QueuedTaskOptions,
 } from "./types";
 
 /**
- * A robust async task scheduler with concurrency, debouncing, deduplication,
- * middleware support, timeout enforcement, and circuit breaker protection.
+ * Prioriq: a robust async task scheduler.
+ *
+ * Events emitted:
+ *  - queued     : when a task is added
+ *  - started    : when a task begins running
+ *  - fulfilled  : when a task completes successfully
+ *  - rejected   : when a task throws an error
+ *  - cancelled  : when a task is cancelled
+ *  - updated    : when a task's priority is changed
  */
-export class TaskScheduler {
+export class Prioriq {
   private queues = new Map<string, PQueue>();
   private pending = new Map<string, NodeJS.Timeout>();
   private deduping = new Set<string>();
-  private dedupeKeyMap: Map<string, string> = new Map();
+  private dedupeKeyMap = new Map<string, string>();
   private abortControllers = new Map<string, AbortController>();
   private middlewares: Middleware[] = [];
   private breaker = new CircuitBreaker();
@@ -27,12 +42,14 @@ export class TaskScheduler {
 
   constructor(private defaultConcurrency = 4) {}
 
+  /** Ensure a queue exists for the group */
   addQueue(group: string, concurrency = this.defaultConcurrency) {
     if (!this.queues.has(group)) {
       this.queues.set(group, new PQueue({ concurrency }));
     }
   }
 
+  /** Configure circuit breaker for a group */
   configureGroup(
     group: string,
     config: { maxFailures: number; cooldownMs: number }
@@ -40,24 +57,28 @@ export class TaskScheduler {
     this.breaker.configure(group, config);
   }
 
+  /** Add middleware */
   use(middleware: Middleware) {
     this.middlewares.push(middleware);
   }
 
+  /** Subscribe to scheduler events */
   on<K extends keyof Events>(type: K, handler: (e: Events[K]) => void) {
     this.emitter.on(type, handler);
   }
 
+  /** Unsubscribe from events */
   off<K extends keyof Events>(type: K, handler: (e: Events[K]) => void) {
     this.emitter.off(type, handler);
   }
 
+  /** Enqueue a task */
   request(options: RequestOptions) {
     const {
       id,
       task,
       group = "default",
-      priority = 0,
+      priority: rawPriority = 0,
       delay = 0,
       debounceMs,
       dedupeKey,
@@ -67,17 +88,22 @@ export class TaskScheduler {
       timeoutMs,
     } = options;
 
+    // Convert priority input ('HOT'|'WARM'|'COLD'|number) to numeric
+    const priority = toNumber(rawPriority as PriorityInput);
+
     if (!this.queues.has(group)) this.addQueue(group);
     if (this.breaker.isOpen(group)) return;
 
     const queue = this.queues.get(group)!;
     const key = `${group}:${id}`;
-
     if (dedupeKey && this.deduping.has(dedupeKey)) return;
+
+    this.emitter.emit("queued", { group, id });
 
     const enqueue = () => {
       this.pending.delete(key);
       if (dedupeKey) this.dedupeKeyMap.delete(dedupeKey);
+
       this.enqueueTask(queue, {
         id,
         task,
@@ -101,26 +127,15 @@ export class TaskScheduler {
     if (delay > 0) {
       if (this.pending.has(key)) return;
       this.pending.set(key, setTimeout(enqueue, delay));
+      if (dedupeKey) this.dedupeKeyMap.set(dedupeKey, key);
       return;
     }
 
     enqueue();
   }
 
-  private enqueueTask(
-    queue: PQueue,
-    options: {
-      id: string;
-      task: Task;
-      group: string;
-      priority: number;
-      idle: boolean;
-      autoPriority?: () => number;
-      dedupeKey?: string;
-      meta?: Record<string, any>;
-      timeoutMs?: number;
-    }
-  ) {
+  /** Internal: wrap and add task to PQueue */
+  private enqueueTask(queue: PQueue, options: QueuedTaskOptions) {
     const {
       id,
       task,
@@ -132,14 +147,18 @@ export class TaskScheduler {
       meta,
       timeoutMs,
     } = options;
-
     const finalPriority = autoPriority ? autoPriority() : priority;
-    const ctx: MiddlewareContext<{ source?: string }> = {
+
+    const ctx: MiddlewareContext = {
       id,
       group,
       task,
       dedupeKey,
       meta,
+      priority: finalPriority,
+      idle,
+      autoPriority,
+      timeoutMs,
     };
     const runner = composeMiddleware(this.middlewares);
 
@@ -148,12 +167,8 @@ export class TaskScheduler {
     this.abortControllers.set(controllerId, signal);
 
     const wrappedTask = async () => {
-      // ** Circuit-breaker at execution time **
-      if (this.breaker.isOpen(group)) {
-        // silently skip running the task
-        return;
-      }
-      this.emitter.emit("start", { group, id });
+      if (this.breaker.isOpen(group)) return;
+      this.emitter.emit("started", { group, id });
 
       try {
         if (idle) await runWhenIdle();
@@ -162,10 +177,10 @@ export class TaskScheduler {
           : await runner(ctx, task);
 
         this.breaker.clear(group);
-        this.emitter.emit("finish", { group, id });
+        this.emitter.emit("fulfilled", { group, id, result });
         return result;
       } catch (error) {
-        this.emitter.emit("error", { group, id, error });
+        this.emitter.emit("rejected", { group, id, error });
         this.breaker.recordFailure(group);
         throw error;
       } finally {
@@ -175,74 +190,107 @@ export class TaskScheduler {
     };
 
     if (dedupeKey) this.deduping.add(dedupeKey);
-    const p = queue.add(wrappedTask, { priority: finalPriority });
-    p.catch(() => {
-      /* already emitted 'error', so just swallow it */
-    });
+    queue.add(wrappedTask, { priority: finalPriority }).catch(() => {});
   }
 
-  cancel(opts: { id?: string; dedupeKey?: string }) {
-    // Cancel by ID
-    const key = opts.id
-      ? [...this.pending.keys()].find((k) => k.endsWith(`:${opts.id}`))
-      : null;
-    if (key) {
-      clearTimeout(this.pending.get(key)!);
-      this.pending.delete(key);
-    }
+  /**
+   * Change priority of an already-queued task.
+   */
+  prioritize(id: string, newPriorityInput: PriorityInput, group = "default") {
+    const queue = this.queues.get(group);
+    if (!queue) return;
 
-    // Cancel by dedupeKey
-    if (opts.dedupeKey) {
-      const pendingKey = this.dedupeKeyMap.get(opts.dedupeKey);
-      if (pendingKey && this.pending.has(pendingKey)) {
-        clearTimeout(this.pending.get(pendingKey)!);
-        this.pending.delete(pendingKey);
+    const newPriority = toNumber(newPriorityInput);
+    const tasks = [...(queue as any).queue] as Array<{
+      options: any;
+      priority: number;
+    }>;
+    for (const task of tasks) {
+      if (task.options?.id === id) {
+        task.priority = newPriority;
+        (queue as any).queue.sort((a: any, b: any) => a.priority - b.priority);
+        this.emitter.emit("updated", { group, id, priority: newPriority });
+        break;
       }
-      this.dedupeKeyMap.delete(opts.dedupeKey);
-      this.deduping.delete(opts.dedupeKey);
     }
+  }
 
-    // Abort controller cleanup
+  /**
+   * Cancel a single task by id or dedupeKey.
+   */
+  cancel(opts: { id?: string; dedupeKey?: string }) {
+    let group: string | undefined;
+    let id: string | undefined;
+
     if (opts.id) {
+      id = opts.id;
       const controllerId = [...this.abortControllers.keys()].find((k) =>
-        k.endsWith(`:${opts.id}`)
+        k.endsWith(`:${id}`)
       );
       if (controllerId) {
+        group = controllerId.split(":")[0];
         this.abortControllers.get(controllerId)?.abort();
         this.abortControllers.delete(controllerId);
       }
     }
+
+    if (opts.dedupeKey) {
+      const key = this.dedupeKeyMap.get(opts.dedupeKey);
+      if (key) {
+        [group, id] = key.split(":");
+        clearTimeout(this.pending.get(key)!);
+        this.pending.delete(key);
+        this.dedupeKeyMap.delete(opts.dedupeKey);
+        this.deduping.delete(opts.dedupeKey);
+      }
+    }
+
+    if (group && id) {
+      this.emitter.emit("cancelled", { group, id });
+    }
   }
 
+  /**
+   * Cancel all tasks in a group.
+   */
   cancelGroup(group: string) {
     for (const key of this.pending.keys()) {
       if (key.startsWith(`${group}:`)) {
         clearTimeout(this.pending.get(key)!);
         this.pending.delete(key);
+        const id = key.split(":")[1];
+        this.emitter.emit("cancelled", { group, id });
       }
     }
     for (const [key, controller] of this.abortControllers.entries()) {
       if (key.startsWith(`${group}:`)) {
         controller.abort();
         this.abortControllers.delete(key);
+        const id = key.split(":")[1];
+        this.emitter.emit("cancelled", { group, id });
       }
     }
   }
 
-  snapshot() {
-    const result: Record<
+  /**
+   * Snapshot queue state.
+   * If group is provided, returns stats for that group only.
+   * Otherwise returns stats for all groups.
+   */
+  snapshot(group?: string) {
+    const stats: Record<
       string,
       { queued: number; running: number; pending: number }
     > = {};
-    for (const [group, queue] of this.queues.entries()) {
-      result[group] = {
+    for (const [grp, queue] of this.queues.entries()) {
+      stats[grp] = {
         queued: queue.size,
         running: queue.pending,
         pending: Array.from(this.pending.keys()).filter((k) =>
-          k.startsWith(`${group}:`)
+          k.startsWith(`${grp}:`)
         ).length,
       };
     }
-    return result;
+    return group ? stats[group] : stats;
   }
 }
