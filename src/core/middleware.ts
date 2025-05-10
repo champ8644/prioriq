@@ -1,4 +1,4 @@
-import type { Middleware, MiddlewareContext } from "./types";
+import type { Middleware, MiddlewareContext, Task } from "./types";
 
 /**
  * Composes middleware functions into a single executable function,
@@ -6,7 +6,7 @@ import type { Middleware, MiddlewareContext } from "./types";
  */
 export function composeMiddleware(
   middleware: Middleware[]
-): (ctx: MiddlewareContext, next: () => Promise<void>) => Promise<void> {
+): (ctx: MiddlewareContext, next: Task) => Promise<void> {
   return function composed(ctx, next) {
     let index = -1;
     return dispatch(0);

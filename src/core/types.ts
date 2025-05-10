@@ -5,7 +5,7 @@ import type { PriorityInput } from "./taskUtils";
  * =================================================================== */
 
 /** Any asynchronous unit of work that Prioriq can execute. */
-export type Task = () => Promise<any>;
+export type Task<T = unknown> = () => Promise<T>;
 
 /**
  * Smallest shared option set.

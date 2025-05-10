@@ -1,4 +1,3 @@
-// src/core/Prioriq.ts
 import PQueue from "p-queue";
 import mitt from "mitt";
 import {
@@ -15,6 +14,7 @@ import type {
   MiddlewareContext,
   Events,
   QueuedTaskOptions,
+  Task,
 } from "./types";
 
 /**
@@ -39,6 +39,12 @@ export class Prioriq {
   private middlewares: Middleware[] = [];
   private breaker = new CircuitBreaker();
   private emitter = mitt<Events>();
+
+  // Using Task to store the task in taskMap
+  private taskMap = new Map<
+    string,
+    { priority: number; task: Task; group: string; cancel: () => void }
+  >(); // Task map to track priorities
 
   constructor(private defaultConcurrency = 4) {}
 
@@ -107,16 +113,14 @@ export class Prioriq {
     }
 
     // Fast‐path: bump priority if already enqueued
-    const items: any[] = (queue as any)._queue || (queue as any).queue;
-    if (Array.isArray(items)) {
-      const idx = items.findIndex((t) => t.options?.id === id);
-      if (idx !== -1) {
-        const [entry] = items.splice(idx, 1);
-        // re-enqueue with new priority
-        queue.add(entry.run, { priority });
-        this.emitter.emit("updated", { group, id, priority });
-        return;
-      }
+    if (this.taskMap.has(id)) {
+      // Update priority and re-enqueue task
+      const taskData = this.taskMap.get(id)!;
+      taskData.priority = priority;
+      this.taskMap.set(id, taskData);
+      queue.add(task, { priority });
+      this.emitter.emit("updated", { group, id, priority });
+      return;
     }
 
     // Remember this request for refresh()
@@ -170,23 +174,40 @@ export class Prioriq {
   /** Adjust priority of a queued task */
   prioritize(id: string, newPrioInput: PriorityInput, group = "default") {
     const queue = this.queues.get(group);
-    if (!queue) return;
+    if (!queue) return; // Return early if the group is not found
 
-    // [1] Grab the underlying array (either ._queue or .queue)
-    const items: any[] = (queue as any)._queue || (queue as any).queue;
-    if (!Array.isArray(items)) return;
+    // [1] Track the task in taskMap
+    const taskData = this.taskMap.get(id);
+    if (!taskData) return; // Task not found, so return early
 
-    // [2] Find & remove the existing entry
-    const idx = items.findIndex((t) => t.options?.id === id);
-    if (idx === -1) return;
-    const entry = items.splice(idx, 1)[0];
+    // [2] Adjust priority by re-adding the task with the new priority
+    const newPriority = toNumber(newPrioInput); // Convert the priority input to a number
+    this.updateTask(id, newPriority, queue); // Use the new updateTask method
 
-    // [3] Re-enqueue it via PQueue’s public API
-    const newPriority = toNumber(newPrioInput);
-    queue.add(entry.task, { priority: newPriority });
-
-    // [4] Fire our event
+    // [3] Emit the "updated" event to notify of the priority change
     this.emitter.emit("updated", { group, id, priority: newPriority });
+  }
+
+  private updateTask(id: string, newPriority: number, queue: PQueue) {
+    const taskData = this.taskMap.get(id);
+    if (!taskData) return;
+
+    // 1. Cancel task if still in the queue
+    const cancelFunc = taskData.cancel;
+    if (cancelFunc) cancelFunc(); // Call cancel if available
+
+    // 2. Remove task from taskMap and queue, then re-add it
+    queue.add(taskData.task, { priority: newPriority });
+
+    // 3. Update the taskMap with the new priority
+    this.taskMap.set(id, { ...taskData, priority: newPriority });
+
+    // 4. Emit the "updated" event
+    this.emitter.emit("updated", {
+      group: taskData.group,
+      id,
+      priority: newPriority,
+    });
   }
 
   /** Cancel tasks by id or dedupeKey */
