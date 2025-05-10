@@ -4,16 +4,16 @@ import type { MiddlewareContext } from "../../src/core/types";
 jest.useFakeTimers();
 
 describe("Prioriq - Middleware", () => {
-  let scheduler: Prioriq;
+  let prioriq: Prioriq;
 
   beforeEach(() => {
-    scheduler = new Prioriq();
+    prioriq = new Prioriq();
   });
 
   test("executes middleware before and after the task", async () => {
     const log: string[] = [];
 
-    scheduler.use(async (ctx, next) => {
+    prioriq.use(async (ctx, next) => {
       log.push(`before:${ctx.id}`);
       await next();
       log.push(`after:${ctx.id}`);
@@ -21,7 +21,7 @@ describe("Prioriq - Middleware", () => {
 
     const task = jest.fn().mockResolvedValue("ok");
 
-    scheduler.request({ id: "m1", task });
+    prioriq.request({ id: "m1", task });
 
     jest.runAllTimers();
     await Promise.resolve();
@@ -33,14 +33,14 @@ describe("Prioriq - Middleware", () => {
   test("middleware receives meta in context", async () => {
     const seen: string[] = [];
 
-    scheduler.use(async (ctx: MiddlewareContext, next) => {
+    prioriq.use(async (ctx: MiddlewareContext, next) => {
       if (ctx.meta?.source) seen.push(ctx.meta.source);
       await next();
     });
 
     const task = jest.fn().mockResolvedValue("ok");
 
-    scheduler.request({
+    prioriq.request({
       id: "meta-case",
       task,
       meta: { source: "unit-test" },
@@ -54,7 +54,7 @@ describe("Prioriq - Middleware", () => {
   });
 
   test("handles meta without expected fields safely", async () => {
-    scheduler.use(async (ctx, next) => {
+    prioriq.use(async (ctx, next) => {
       expect(ctx.meta?.note).toBe("branch-test");
       expect(ctx.meta?.source).toBeUndefined();
       await next();
@@ -62,7 +62,7 @@ describe("Prioriq - Middleware", () => {
 
     const task = jest.fn().mockResolvedValue("ok");
 
-    scheduler.request({
+    prioriq.request({
       id: "meta-fallback",
       task,
       meta: { note: "branch-test" },

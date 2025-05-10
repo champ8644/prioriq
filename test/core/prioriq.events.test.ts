@@ -3,24 +3,24 @@ import { Prioriq } from "../../src/core/Prioriq";
 jest.useFakeTimers();
 
 describe("Prioriq - Event Emission", () => {
-  let scheduler: Prioriq;
+  let prioriq: Prioriq;
 
   beforeEach(() => {
-    scheduler = new Prioriq();
+    prioriq = new Prioriq();
   });
 
   test("emits 'updated' on priority change", () => {
     const onUpdated = jest.fn();
-    scheduler.on("updated", onUpdated);
+    prioriq.on("updated", onUpdated);
 
-    scheduler.request({
+    prioriq.request({
       id: "prio",
       task: async () => {},
       group: "default",
       delay: 1000, // ensures it's in queue
     });
 
-    scheduler.prioritize("prio", 1);
+    prioriq.prioritize("prio", 1);
 
     expect(onUpdated).toHaveBeenCalledWith({
       group: "default",
@@ -31,16 +31,16 @@ describe("Prioriq - Event Emission", () => {
 
   test("emits 'cancelled' when task is cancelled by ID", () => {
     const onCancelled = jest.fn();
-    scheduler.on("cancelled", onCancelled);
+    prioriq.on("cancelled", onCancelled);
 
-    scheduler.request({
+    prioriq.request({
       id: "c1",
       task: async () => {},
       group: "default",
       delay: 1000,
     });
 
-    scheduler.cancel({ id: "c1" });
+    prioriq.cancel({ id: "c1" });
 
     expect(onCancelled).toHaveBeenCalledWith({
       id: "c1",
@@ -50,9 +50,9 @@ describe("Prioriq - Event Emission", () => {
 
   test("emits 'fulfilled' when task completes", async () => {
     const onFulfilled = jest.fn();
-    scheduler.on("fulfilled", onFulfilled);
+    prioriq.on("fulfilled", onFulfilled);
 
-    scheduler.request({
+    prioriq.request({
       id: "done",
       task: async () => "ok",
     });
@@ -69,9 +69,9 @@ describe("Prioriq - Event Emission", () => {
 
   test("emits 'rejected' when task throws", async () => {
     const onRejected = jest.fn();
-    scheduler.on("rejected", onRejected);
+    prioriq.on("rejected", onRejected);
 
-    scheduler.request({
+    prioriq.request({
       id: "fail",
       task: async () => {
         throw new Error("fail");

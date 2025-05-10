@@ -21,7 +21,7 @@
     "dev": "rollup -c -w",
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
-    "run-tool": "node tools/register-and-run.mjs",
+    "run-tool": "node --trace-deprecation tools/register-and-run.mjs",
     "list:files": "npm run run-tool -- tools/listFiles.mts",
     "test": "npm run run-tool -- tools/test-log.mts",
     "release": "standard-version",

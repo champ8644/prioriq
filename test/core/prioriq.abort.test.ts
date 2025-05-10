@@ -3,20 +3,20 @@ import { Prioriq } from "../../src/core/Prioriq";
 jest.useFakeTimers();
 
 describe("Prioriq - Abort, Idle, and Priority", () => {
-  let scheduler: Prioriq;
+  let prioriq: Prioriq;
 
   beforeEach(() => {
-    scheduler = new Prioriq();
+    prioriq = new Prioriq();
   });
 
   test("abortController is deleted after task runs", async () => {
     const task = jest.fn().mockResolvedValue("finished");
-    scheduler.request({ id: "abort-test", task });
+    prioriq.request({ id: "abort-test", task });
 
     jest.runAllTimers();
     await Promise.resolve();
 
-    const controllerMap = (scheduler as any)["abortControllers"] as Map<
+    const controllerMap = (prioriq as any)["abortControllers"] as Map<
       string,
       AbortController
     >;
@@ -28,36 +28,34 @@ describe("Prioriq - Abort, Idle, and Priority", () => {
 
   test("cancel deletes abortController", () => {
     const task = jest.fn().mockResolvedValue("done");
-    scheduler.request({ id: "abort-test", task });
+    prioriq.request({ id: "abort-test", task });
 
-    const controllerId = [
-      ...(scheduler as any)["abortControllers"].keys(),
-    ].find((k) => k.endsWith(":abort-test"));
+    const controllerId = [...(prioriq as any)["abortControllers"].keys()].find(
+      (k) => k.endsWith(":abort-test")
+    );
     expect(controllerId).toBeDefined();
 
-    scheduler.cancel({ id: "abort-test" });
-    expect((scheduler as any)["abortControllers"].has(controllerId!)).toBe(
-      false
-    );
+    prioriq.cancel({ id: "abort-test" });
+    expect((prioriq as any)["abortControllers"].has(controllerId!)).toBe(false);
   });
 
   test("cancelGroup deletes abortControllers", () => {
     const task = jest.fn().mockResolvedValue("done");
-    scheduler.request({ id: "g1-item", task, group: "g1" });
+    prioriq.request({ id: "g1-item", task, group: "g1" });
 
-    scheduler.cancelGroup("g1");
-    const hasAny = [...(scheduler as any)["abortControllers"].keys()].some(
-      (k) => k.startsWith("g1:")
+    prioriq.cancelGroup("g1");
+    const hasAny = [...(prioriq as any)["abortControllers"].keys()].some((k) =>
+      k.startsWith("g1:")
     );
     expect(hasAny).toBe(false);
   });
 
   test("cancel with id clears pending timeout", () => {
     const task = jest.fn();
-    scheduler.request({ id: "timeout-test", task, debounceMs: 1000 });
+    prioriq.request({ id: "timeout-test", task, debounceMs: 1000 });
 
-    scheduler.cancel({ id: "timeout-test" });
-    expect((scheduler as any).pending.size).toBe(0);
+    prioriq.cancel({ id: "timeout-test" });
+    expect((prioriq as any).pending.size).toBe(0);
   });
 
   test("uses runWhenIdle when idle = true", async () => {
@@ -69,7 +67,7 @@ describe("Prioriq - Abort, Idle, and Priority", () => {
       });
 
     const task = jest.fn().mockResolvedValue("done");
-    scheduler.request({ id: "idle-run", task, idle: true });
+    prioriq.request({ id: "idle-run", task, idle: true });
 
     jest.runAllTimers();
     await Promise.resolve();
@@ -82,7 +80,7 @@ describe("Prioriq - Abort, Idle, and Priority", () => {
     const task = jest.fn().mockResolvedValue("ok");
     const autoPriority = jest.fn(() => 42);
 
-    scheduler.request({
+    prioriq.request({
       id: "auto-pri",
       task,
       autoPriority,

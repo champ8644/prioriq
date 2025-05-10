@@ -3,28 +3,28 @@ import { Prioriq } from "../../src/core/Prioriq";
 jest.useFakeTimers();
 
 describe("Prioriq - Internal Mechanics", () => {
-  let scheduler: Prioriq;
+  let prioriq: Prioriq;
 
   beforeEach(() => {
-    scheduler = new Prioriq();
+    prioriq = new Prioriq();
   });
 
   test("snapshot shows group state correctly", () => {
-    scheduler.request({
+    prioriq.request({
       id: "s1",
       task: async () => {},
       group: "x",
       debounceMs: 100,
     });
 
-    scheduler.request({
+    prioriq.request({
       id: "s2",
       task: async () => {},
       group: "x",
       delay: 200,
     });
 
-    const snap = scheduler.snapshot("x");
+    const snap = prioriq.snapshot("x");
     expect(snap).toEqual({
       queued: 0,
       running: 0,
@@ -32,57 +32,64 @@ describe("Prioriq - Internal Mechanics", () => {
     });
 
     jest.advanceTimersByTime(200);
-    const after = scheduler.snapshot("x");
+    const after = prioriq.snapshot("x");
     expect(after.pending).toBe(0);
   });
 
   test("addQueue does not overwrite existing queue", () => {
-    scheduler.addQueue("custom", 1);
-    const before = scheduler.snapshot("custom");
+    prioriq.addQueue("custom", 1);
+    const before = prioriq.snapshot("custom");
 
-    scheduler.addQueue("custom", 999); // should not override
-    const after = scheduler.snapshot("custom");
+    prioriq.addQueue("custom", 999); // should not override
+    const after = prioriq.snapshot("custom");
 
     expect(after).toEqual(before);
   });
 
   test("deduping set is cleared after task runs", async () => {
-    scheduler.request({
+    prioriq.request({
       id: "dedupe-me",
       task: async () => "done",
       dedupeKey: "d-key",
     });
 
-    expect((scheduler as any).deduping.has("d-key")).toBe(true);
+    expect((prioriq as any).deduping.has("d-key")).toBe(true);
 
     jest.runAllTimers();
     await Promise.resolve();
 
-    expect((scheduler as any).deduping.has("d-key")).toBe(false);
+    expect((prioriq as any).deduping.has("d-key")).toBe(false);
   });
-
   test("taskCache entry is deleted after execution", async () => {
-    scheduler.request({
+    // Ensure taskCache is properly initialized (if needed)
+    if (!prioriq["taskCache"]) {
+      prioriq["taskCache"] = new Map();
+    }
+
+    prioriq.request({
       id: "c1",
       task: async () => {},
     });
 
     const key = "default:c1";
-    expect((scheduler as any).taskCache.has(key)).toBe(true);
+
+    // Check that the taskCache contains the task entry before running the timer
+    expect(prioriq["taskCache"].has(key)).toBe(true);
 
     jest.runAllTimers();
     await Promise.resolve();
 
-    expect((scheduler as any).taskCache.has(key)).toBe(false);
+    // Ensure taskCache entry is deleted after execution
+    expect(prioriq["taskCache"].has(key)).toBe(false);
   });
 
   test("handles undefined abortControllers safely", () => {
-    (scheduler as any).abortControllers.set("default:x", undefined);
+    (prioriq as any).abortControllers.set("default:x", undefined);
 
     expect(() => {
-      scheduler.cancel({ id: "x" });
+      prioriq.cancel({ id: "x" });
     }).not.toThrow();
 
-    expect((scheduler as any).abortControllers.has("default:x")).toBe(false);
+    expect((prioriq as any).abortControllers.has("default:x")).toBe(false);
   });
 });

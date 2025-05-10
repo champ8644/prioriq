@@ -4,15 +4,15 @@ import { Prioriq } from "../../src/core/Prioriq";
 jest.useFakeTimers();
 
 describe("Prioriq - Core Scheduling", () => {
-  let scheduler: Prioriq;
+  let prioriq: Prioriq;
 
   beforeEach(() => {
-    scheduler = new Prioriq();
+    prioriq = new Prioriq();
   });
 
   test("executes task immediately when no delay or debounce", async () => {
     const task = jest.fn().mockResolvedValue("ok");
-    scheduler.request({ id: "immediate", task });
+    prioriq.request({ id: "immediate", task });
 
     jest.runAllTimers();
     await Promise.resolve();
@@ -21,7 +21,7 @@ describe("Prioriq - Core Scheduling", () => {
 
   test("respects delay before enqueueing", async () => {
     const task = jest.fn().mockResolvedValue("ok");
-    scheduler.request({ id: "delayed", task, delay: 500 });
+    prioriq.request({ id: "delayed", task, delay: 500 });
 
     jest.advanceTimersByTime(499);
     expect(task).not.toHaveBeenCalled();
@@ -33,8 +33,8 @@ describe("Prioriq - Core Scheduling", () => {
 
   test("debounces correctly", async () => {
     const task = jest.fn().mockResolvedValue("ok");
-    scheduler.request({ id: "debounced", task, debounceMs: 300 });
-    scheduler.request({ id: "debounced", task, debounceMs: 300 });
+    prioriq.request({ id: "debounced", task, debounceMs: 300 });
+    prioriq.request({ id: "debounced", task, debounceMs: 300 });
 
     jest.advanceTimersByTime(299);
     expect(task).not.toHaveBeenCalled();
@@ -47,8 +47,8 @@ describe("Prioriq - Core Scheduling", () => {
   test("deduplicates using dedupeKey", async () => {
     const task = jest.fn().mockResolvedValue("ok");
 
-    scheduler.request({ id: "a", task, dedupeKey: "same" });
-    scheduler.request({ id: "b", task, dedupeKey: "same" });
+    prioriq.request({ id: "a", task, dedupeKey: "same" });
+    prioriq.request({ id: "b", task, dedupeKey: "same" });
 
     jest.runAllTimers();
     await Promise.resolve();
@@ -60,9 +60,9 @@ describe("Prioriq - Core Scheduling", () => {
     const longTask = () => new Promise(() => {});
     const rejectSpy = jest.fn();
 
-    scheduler.on("rejected", rejectSpy);
+    prioriq.on("rejected", rejectSpy);
 
-    scheduler.request({
+    prioriq.request({
       id: "timeout",
       task: longTask,
       timeoutMs: 300,
@@ -83,7 +83,7 @@ describe("Prioriq - Core Scheduling", () => {
     const task = jest.fn().mockResolvedValue("ok");
     const autoPriority = jest.fn(() => 42);
 
-    scheduler.request({ id: "auto-pri", task, autoPriority });
+    prioriq.request({ id: "auto-pri", task, autoPriority });
     jest.runAllTimers();
     await Promise.resolve();
 

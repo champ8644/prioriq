@@ -10,10 +10,10 @@ import { Prioriq } from "../../src/core/Prioriq";
 
 describe("useRequest", () => {
   const queryClient = new QueryClient();
-  const scheduler = new Prioriq();
+  const prioriq = new Prioriq();
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <PrioriqProvider value={scheduler}>
+    <PrioriqProvider value={prioriq}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </PrioriqProvider>
   );

@@ -26,7 +26,7 @@ export interface RequestQueryOptions<T> {
  *   import { requestQuery } from "prioriq/react";
  */
 export function requestQuery<T>(
-  scheduler: Prioriq,
+  prioriq: Prioriq,
   opts: RequestQueryOptions<T>
 ): Promise<T> {
   const {
@@ -44,7 +44,7 @@ export function requestQuery<T>(
     meta,
   } = opts;
 
-  const promise = scheduler.request({
+  const promise = prioriq.request({
     id,
     group,
     priority,
@@ -54,7 +54,11 @@ export function requestQuery<T>(
     idle,
     timeoutMs,
     meta,
-    task: () => queryClient.fetchQuery({ queryKey, queryFn: fetchFn }),
+    task: () =>
+      queryClient.fetchQuery({ queryKey, queryFn: fetchFn }).catch((error) => {
+        console.error(`Error with task ${id}:`, error);
+        throw error; // rethrow after logging
+      }),
   });
 
   return (promise ??
