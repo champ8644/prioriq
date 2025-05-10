@@ -33,17 +33,18 @@ export class Prioriq {
   private pending = new Map<string, NodeJS.Timeout>();
   private deduping = new Set<string>();
   private dedupeKeyMap = new Map<string, string>();
-  private everDedupe = new Set<string>();
+  /** store last full RequestOptions for refresh() */
   private lastRequest = new Map<string, RequestOptions>();
   private abortControllers = new Map<string, AbortController>();
   private middlewares: Middleware[] = [];
   private breaker = new CircuitBreaker();
   private emitter = mitt<Events>();
 
-  /** stores the last full RequestOptions per task for `.refresh()` */
-  private taskCache = new Map<string, RequestOptions>();
-
   constructor(private defaultConcurrency = 4) {}
+
+  /* ------------------------------------------------------------------ */
+  /*  Public API                                                        */
+  /* ------------------------------------------------------------------ */
 
   addQueue(group: string, concurrency = this.defaultConcurrency) {
     if (!this.queues.has(group)) {
@@ -69,6 +70,8 @@ export class Prioriq {
   off<K extends keyof Events>(type: K, handler: (e: Events[K]) => void) {
     this.emitter.off(type, handler);
   }
+
+  /** Main entry — queue or bump a task */
   request(options: RequestOptions) {
     const {
       id,
@@ -84,7 +87,7 @@ export class Prioriq {
     } = options;
 
     const dedupeKey = options.dedupeKey ?? id;
-    if (this.everDedupe.has(dedupeKey)) return;
+    if (this.deduping.has(dedupeKey)) return;
     const priority = toNumber(rawPriority as PriorityInput);
     if (this.breaker.isOpen(group)) return;
 
@@ -92,39 +95,39 @@ export class Prioriq {
     const queue = this.queues.get(group)!;
     const key = `${group}:${id}`;
 
-    // Fast-path: if task is already pending
+    // Fast‐path: bump priority if already pending
     if (this.pending.has(key)) {
-      const stored = this.taskCache.get(key);
-      if (stored && priority !== undefined) {
-        stored.priority = priority;
-        this.taskCache.set(key, stored);
+      if (priority !== undefined) {
+        const prev = this.lastRequest.get(key)!;
+        prev.priority = priority;
+        this.lastRequest.set(key, prev);
+        this.emitter.emit("updated", { group, id, priority });
       }
       return;
     }
 
-    // Fast-path: if already in queue, reprioritize it
-    const queueItems = (queue as any)._queue ?? (queue as any).queue;
-    if (queueItems && typeof queueItems[Symbol.iterator] === "function") {
-      for (const entry of queueItems) {
-        if (entry.options?.id === id) {
-          entry.priority = priority;
-          this.emitter.emit("updated", { group, id, priority });
-          return;
-        }
+    // Fast‐path: bump priority if already enqueued
+    const items: any[] = (queue as any)._queue || (queue as any).queue;
+    if (Array.isArray(items)) {
+      const idx = items.findIndex((t) => t.options?.id === id);
+      if (idx !== -1) {
+        const [entry] = items.splice(idx, 1);
+        // re-enqueue with new priority
+        queue.add(entry.run, { priority });
+        this.emitter.emit("updated", { group, id, priority });
+        return;
       }
     }
 
-    // Store for refresh()
-    const fullOpts: RequestOptions = { ...options, id, group, dedupeKey };
-    this.taskCache.set(key, fullOpts);
-    this.lastRequest.set(key, fullOpts);
+    // Remember this request for refresh()
+    const full: RequestOptions = { ...options, id, group, dedupeKey };
+    this.lastRequest.set(key, full);
 
     this.emitter.emit("queued", { group, id });
 
     const enqueue = () => {
       this.pending.delete(key);
       this.dedupeKeyMap.delete(dedupeKey);
-
       this.enqueueTask(queue, {
         id,
         task,
@@ -155,6 +158,7 @@ export class Prioriq {
     enqueue();
   }
 
+  /** Force re-execution of last recorded task */
   refresh(id: string, group = "default") {
     const key = `${group}:${id}`;
     const prev = this.lastRequest.get(key);
@@ -163,59 +167,71 @@ export class Prioriq {
     this.request(prev);
   }
 
-  prioritize(id: string, newPriorityInput: PriorityInput, group = "default") {
-    const queue: any = this.queues.get(group);
+  /** Adjust priority of a queued task */
+  prioritize(id: string, newPrioInput: PriorityInput, group = "default") {
+    const queue = this.queues.get(group);
     if (!queue) return;
 
-    const rawQueue = queue._queue ?? queue.queue;
-    if (!rawQueue || typeof rawQueue[Symbol.iterator] !== "function") return;
+    // [1] Grab the underlying array (either ._queue or .queue)
+    const items: any[] = (queue as any)._queue || (queue as any).queue;
+    if (!Array.isArray(items)) return;
 
-    const entry = [...rawQueue].find((t: any) => t.options?.id === id);
-    if (!entry) return;
+    // [2] Find & remove the existing entry
+    const idx = items.findIndex((t) => t.options?.id === id);
+    if (idx === -1) return;
+    const entry = items.splice(idx, 1)[0];
 
-    entry.priority = toNumber(newPriorityInput);
-    this.emitter.emit("updated", { group, id, priority: entry.priority });
+    // [3] Re-enqueue it via PQueue’s public API
+    const newPriority = toNumber(newPrioInput);
+    queue.add(entry.task, { priority: newPriority });
+
+    // [4] Fire our event
+    this.emitter.emit("updated", { group, id, priority: newPriority });
   }
 
+  /** Cancel tasks by id or dedupeKey */
   cancel(opts: { id?: string; dedupeKey?: string }) {
-    let group: string | undefined;
-    let id: string | undefined;
+    let emitGroup: string | undefined;
+    let emitId: string | undefined;
 
     if (opts.id) {
-      id = opts.id;
-      const controllerId = [...this.abortControllers.keys()].find((k) =>
-        k.endsWith(`:${id}`)
-      );
-      if (controllerId) {
-        group = controllerId.split(":")[0];
-        this.abortControllers.get(controllerId)?.abort();
-        this.abortControllers.delete(controllerId);
-      }
-
-      const key = `${group ?? "default"}:${id}`;
+      const id = opts.id;
+      const key = `default:${id}`;
       if (this.pending.has(key)) {
         clearTimeout(this.pending.get(key)!);
         this.pending.delete(key);
+        [emitGroup, emitId] = key.split(":");
+      }
+      const ctrl = [...this.abortControllers.keys()].find((k) =>
+        k.endsWith(`:${id}`)
+      );
+      if (ctrl) {
+        this.abortControllers.get(ctrl)?.abort();
+        this.abortControllers.delete(ctrl);
+        [emitGroup, emitId] = ctrl.split(":");
       }
     }
 
     if (opts.dedupeKey) {
       const key = this.dedupeKeyMap.get(opts.dedupeKey);
       if (key) {
-        [group, id] = key.split(":");
         clearTimeout(this.pending.get(key)!);
         this.pending.delete(key);
         this.dedupeKeyMap.delete(opts.dedupeKey);
         this.deduping.delete(opts.dedupeKey);
+        [emitGroup, emitId] = key.split(":");
       }
     }
 
-    if (group && id) {
-      this.emitter.emit("cancelled", { group, id });
-      this.taskCache.delete(`${group}:${id}`);
+    if (emitGroup && emitId) {
+      this.emitter.emit("cancelled", {
+        group: emitGroup,
+        id: emitId,
+      });
     }
   }
 
+  /** Cancel all tasks in a group */
   cancelGroup(group: string) {
     for (const key of this.pending.keys()) {
       if (key.startsWith(`${group}:`)) {
@@ -223,35 +239,38 @@ export class Prioriq {
         this.pending.delete(key);
         const id = key.split(":")[1];
         this.emitter.emit("cancelled", { group, id });
-        this.taskCache.delete(key);
       }
     }
-    for (const [key, controller] of this.abortControllers.entries()) {
+    for (const [key, ctrl] of this.abortControllers.entries()) {
       if (key.startsWith(`${group}:`)) {
-        controller.abort();
+        ctrl.abort();
         this.abortControllers.delete(key);
         const id = key.split(":")[1];
         this.emitter.emit("cancelled", { group, id });
-        this.taskCache.delete(key);
       }
     }
   }
 
+  /** Snapshot queue state */
   snapshot(group?: string) {
     const stats: Record<
       string,
       { queued: number; running: number; pending: number }
     > = {};
-    for (const [grp, queue] of this.queues.entries()) {
+    for (const [grp, q] of this.queues.entries()) {
       stats[grp] = {
-        queued: queue.size,
-        running: queue.pending,
+        queued: q.size,
+        running: q.pending,
         pending: [...this.pending.keys()].filter((k) => k.startsWith(`${grp}:`))
           .length,
       };
     }
     return group ? stats[group] : stats;
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Internals                                                         */
+  /* ------------------------------------------------------------------ */
 
   private enqueueTask(queue: PQueue, opts: QueuedTaskOptions) {
     const {
@@ -287,13 +306,11 @@ export class Prioriq {
     const wrapped = async () => {
       if (this.breaker.isOpen(group)) return;
       this.emitter.emit("started", { group, id });
-
       try {
         if (idle) await runWhenIdle();
         const result = timeoutMs
           ? await withTimeout(runPipeline(ctx, task), timeoutMs, id)
           : await runPipeline(ctx, task);
-
         this.breaker.clear(group);
         this.emitter.emit("fulfilled", { group, id, result });
         return result;
@@ -304,7 +321,6 @@ export class Prioriq {
       } finally {
         this.deduping.delete(dedupeKey);
         this.abortControllers.delete(controllerId);
-        this.taskCache.delete(`${group}:${id}`);
       }
     };
 

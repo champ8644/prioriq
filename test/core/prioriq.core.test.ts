@@ -1,12 +1,13 @@
-import { TaskScheduler } from "../src/scheduler/TaskScheduler";
+// test/core/prioriq.core.test.ts
+import { Prioriq } from "../../src/core/Prioriq";
 
 jest.useFakeTimers();
 
-describe("TaskScheduler - Basic Scheduling", () => {
-  let scheduler: TaskScheduler;
+describe("Prioriq - Core Scheduling", () => {
+  let scheduler: Prioriq;
 
   beforeEach(() => {
-    scheduler = new TaskScheduler();
+    scheduler = new Prioriq();
   });
 
   test("executes task immediately when no delay or debounce", async () => {
@@ -45,29 +46,37 @@ describe("TaskScheduler - Basic Scheduling", () => {
 
   test("deduplicates using dedupeKey", async () => {
     const task = jest.fn().mockResolvedValue("ok");
-    scheduler.request({ id: "a", task, dedupeKey: "dup" });
-    scheduler.request({ id: "b", task, dedupeKey: "dup" });
+
+    scheduler.request({ id: "a", task, dedupeKey: "same" });
+    scheduler.request({ id: "b", task, dedupeKey: "same" });
 
     jest.runAllTimers();
     await Promise.resolve();
+
     expect(task).toHaveBeenCalledTimes(1);
   });
 
-  test("handles timeoutMs properly", async () => {
-    jest.useRealTimers();
+  test("enforces timeoutMs correctly", async () => {
+    const longTask = () => new Promise(() => {});
+    const rejectSpy = jest.fn();
 
-    const onError = jest.fn();
-    scheduler.on("error", onError);
+    scheduler.on("rejected", rejectSpy);
+
     scheduler.request({
       id: "timeout",
-      task: () => new Promise(() => {}),
+      task: longTask,
       timeoutMs: 300,
     });
 
-    await new Promise((r) => setTimeout(r, 350));
-    expect(onError).toHaveBeenCalled();
+    jest.advanceTimersByTime(301);
+    await Promise.resolve();
 
-    jest.useFakeTimers();
+    expect(rejectSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "timeout",
+        error: expect.any(Error),
+      })
+    );
   });
 
   test("respects autoPriority callback", async () => {

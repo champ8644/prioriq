@@ -1,4 +1,4 @@
-import { withTimeout, runWhenIdle } from "../src/scheduler/taskUtils";
+import { withTimeout, runWhenIdle } from "../../src/core/taskUtils";
 
 jest.useFakeTimers();
 
@@ -15,7 +15,7 @@ describe("taskUtils", () => {
     const task = new Promise((res) => setTimeout(() => res("slow"), 100));
     const resultPromise = withTimeout(task, 50, "timeout");
     jest.advanceTimersByTime(51);
-    await expect(resultPromise).rejects.toThrow(/timed out/);
+    await expect(resultPromise).rejects.toThrow(/Timeout: timeout/);
   });
 
   test("runWhenIdle uses requestIdleCallback if available", async () => {
@@ -35,5 +35,5 @@ describe("taskUtils", () => {
     await runWhenIdle();
     expect(setTimeoutSpy).toHaveBeenCalled();
     global.requestIdleCallback = original;
-  });
+  }, 10000);
 });

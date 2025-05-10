@@ -1,12 +1,12 @@
-import { TaskScheduler } from "../src/scheduler/TaskScheduler";
+import { Prioriq } from "../../src/core/Prioriq";
 
 jest.useFakeTimers();
 
-describe("TaskScheduler - Abort, Idle, and Priority", () => {
-  let scheduler: TaskScheduler;
+describe("Prioriq - Abort, Idle, and Priority", () => {
+  let scheduler: Prioriq;
 
   beforeEach(() => {
-    scheduler = new TaskScheduler();
+    scheduler = new Prioriq();
   });
 
   test("abortController is deleted after task runs", async () => {
@@ -16,21 +16,29 @@ describe("TaskScheduler - Abort, Idle, and Priority", () => {
     jest.runAllTimers();
     await Promise.resolve();
 
-    const keys = Array.from(scheduler["abortControllers"].keys());
-    expect(keys.find((k) => k.endsWith(":abort-test"))).toBeUndefined();
+    const controllerMap = (scheduler as any)["abortControllers"] as Map<
+      string,
+      AbortController
+    >;
+    const hasKey = [...controllerMap.keys()].some((k) =>
+      k.endsWith(":abort-test")
+    );
+    expect(hasKey).toBe(false);
   });
 
   test("cancel deletes abortController", () => {
     const task = jest.fn().mockResolvedValue("done");
     scheduler.request({ id: "abort-test", task });
 
-    const controllerId = [...scheduler["abortControllers"].keys()].find((k) =>
-      k.endsWith(":abort-test")
-    );
+    const controllerId = [
+      ...(scheduler as any)["abortControllers"].keys(),
+    ].find((k) => k.endsWith(":abort-test"));
     expect(controllerId).toBeDefined();
 
     scheduler.cancel({ id: "abort-test" });
-    expect(scheduler["abortControllers"].has(controllerId!)).toBe(false);
+    expect((scheduler as any)["abortControllers"].has(controllerId!)).toBe(
+      false
+    );
   });
 
   test("cancelGroup deletes abortControllers", () => {
@@ -38,8 +46,8 @@ describe("TaskScheduler - Abort, Idle, and Priority", () => {
     scheduler.request({ id: "g1-item", task, group: "g1" });
 
     scheduler.cancelGroup("g1");
-    const hasAny = [...scheduler["abortControllers"].keys()].some((k) =>
-      k.startsWith("g1:")
+    const hasAny = [...(scheduler as any)["abortControllers"].keys()].some(
+      (k) => k.startsWith("g1:")
     );
     expect(hasAny).toBe(false);
   });
@@ -48,7 +56,7 @@ describe("TaskScheduler - Abort, Idle, and Priority", () => {
     const task = jest.fn();
     scheduler.request({ id: "timeout-test", task, debounceMs: 1000 });
 
-    scheduler.cancel({ id: "timeout-test" }); // will match in pending keys
+    scheduler.cancel({ id: "timeout-test" });
     expect((scheduler as any).pending.size).toBe(0);
   });
 
