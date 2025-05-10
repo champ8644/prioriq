@@ -54,6 +54,8 @@ export interface ScheduleOptions<Meta = Record<string, any>>
 export interface RequestOptions<Meta = Record<string, any>>
   extends ScheduleOptions<Meta> {
   task: Task;
+  staleTime?: number; // Time until the task is considered stale (in ms)
+  cacheTime?: number; // Time until the task is removed from the cache (in ms)
 }
 
 /**

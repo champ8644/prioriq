@@ -90,6 +90,8 @@ export class Prioriq {
       autoPriority,
       meta,
       timeoutMs,
+      staleTime = 0,
+      cacheTime = 300000, // Default to 5 minutes
     } = options;
 
     const dedupeKey = options.dedupeKey ?? id;
@@ -167,12 +169,19 @@ export class Prioriq {
   }
 
   /** Force re-execution of last recorded task */
-  refresh(id: string, group = "default") {
+  refetch(id: string, group = "default") {
     const key = `${group}:${id}`;
-    const prev = this.lastRequest.get(key);
-    if (!prev) throw new Error(`No prior request() for id '${id}'`);
-    this.cancel({ id });
-    this.request(prev);
+    const cachedTask = this.taskMap.get(key);
+    if (cachedTask) {
+      // Remove the cached task
+      this.taskMap.delete(key);
+    }
+
+    // Re-execute the task
+    const task = cachedTask?.task;
+    if (task) {
+      this.request({ id, task, group });
+    }
   }
 
   /** Adjust priority of a queued task */
