@@ -45,10 +45,6 @@ export class Prioriq {
 
   constructor(private defaultConcurrency = 4) {}
 
-  /* ------------------------------------------------------------------ */
-  /*  Public API                                                        */
-  /* ------------------------------------------------------------------ */
-
   addQueue(group: string, concurrency = this.defaultConcurrency) {
     if (!this.queues.has(group)) {
       this.queues.set(group, new PQueue({ concurrency }));
@@ -73,8 +69,6 @@ export class Prioriq {
   off<K extends keyof Events>(type: K, handler: (e: Events[K]) => void) {
     this.emitter.off(type, handler);
   }
-
-  /** Main entry — queue or bump a task */
   request(options: RequestOptions) {
     const {
       id,
@@ -98,40 +92,31 @@ export class Prioriq {
     const queue = this.queues.get(group)!;
     const key = `${group}:${id}`;
 
-    /* ---------- queue-or-bump fast path ---------------------------- */
-    // 1. If already pending (debounce or delay) → update stored opts & priority
+    // Fast-path: if task is already pending
     if (this.pending.has(key)) {
-      if (priority !== undefined) {
-        // re-store latest options for when timer fires
-        const stored = this.taskCache.get(key)!;
+      const stored = this.taskCache.get(key);
+      if (stored && priority !== undefined) {
         stored.priority = priority;
         this.taskCache.set(key, stored);
       }
-      return; // let existing timer fire
+      return;
     }
 
-    // Try to access internal queue (undocumented API, guarded carefully)
-    const queueItems = (queue as any)._queue;
+    // Fast-path: if already in queue, reprioritize it
+    const queueItems = (queue as any)._queue ?? (queue as any).queue;
     if (queueItems && typeof queueItems[Symbol.iterator] === "function") {
-      for (const task of queueItems) {
-        if (task.options?.id === id) {
-          if (priority !== undefined) {
-            task.priority = priority;
-            // No manual sort! p-queue handles priority heap internally
-            this.emitter.emit("updated", { group, id, priority });
-          }
+      for (const entry of queueItems) {
+        if (entry.options?.id === id) {
+          entry.priority = priority;
+          this.emitter.emit("updated", { group, id, priority });
           return;
         }
       }
     }
 
-    /* -------------------------------------------------------------- */
-
-    /* ---------- store for refresh() ------------------------------- */
+    // Store for refresh()
     const fullOpts: RequestOptions = { ...options, id, group, dedupeKey };
     this.taskCache.set(key, fullOpts);
-    /* -------------------------------------------------------------- */
-
     this.lastRequest.set(key, fullOpts);
 
     this.emitter.emit("queued", { group, id });
@@ -170,7 +155,6 @@ export class Prioriq {
     enqueue();
   }
 
-  /** Force re-execution of last recorded task */
   refresh(id: string, group = "default") {
     const key = `${group}:${id}`;
     const prev = this.lastRequest.get(key);
@@ -183,15 +167,13 @@ export class Prioriq {
     const queue: any = this.queues.get(group);
     if (!queue) return;
 
-    const entry = [...(queue._queue ?? queue.queue)].find(
-      (t: any) => t.options?.id === id
-    );
+    const rawQueue = queue._queue ?? queue.queue;
+    if (!rawQueue || typeof rawQueue[Symbol.iterator] !== "function") return;
+
+    const entry = [...rawQueue].find((t: any) => t.options?.id === id);
     if (!entry) return;
 
     entry.priority = toNumber(newPriorityInput);
-    (queue._queue ?? queue.queue).sort(
-      (a: any, b: any) => a.priority - b.priority
-    );
     this.emitter.emit("updated", { group, id, priority: entry.priority });
   }
 
@@ -209,7 +191,7 @@ export class Prioriq {
         this.abortControllers.get(controllerId)?.abort();
         this.abortControllers.delete(controllerId);
       }
-      // also clear any pending timer
+
       const key = `${group ?? "default"}:${id}`;
       if (this.pending.has(key)) {
         clearTimeout(this.pending.get(key)!);
@@ -229,7 +211,7 @@ export class Prioriq {
     }
 
     if (group && id) {
-      this.emitter.emit("cancelled", { group: group ?? "default", id });
+      this.emitter.emit("cancelled", { group, id });
       this.taskCache.delete(`${group}:${id}`);
     }
   }
@@ -240,7 +222,7 @@ export class Prioriq {
         clearTimeout(this.pending.get(key)!);
         this.pending.delete(key);
         const id = key.split(":")[1];
-        this.emitter.emit("cancelled", { group: group ?? "default", id });
+        this.emitter.emit("cancelled", { group, id });
         this.taskCache.delete(key);
       }
     }
@@ -249,7 +231,7 @@ export class Prioriq {
         controller.abort();
         this.abortControllers.delete(key);
         const id = key.split(":")[1];
-        this.emitter.emit("cancelled", { group: group ?? "default", id });
+        this.emitter.emit("cancelled", { group, id });
         this.taskCache.delete(key);
       }
     }
@@ -270,10 +252,6 @@ export class Prioriq {
     }
     return group ? stats[group] : stats;
   }
-
-  /* ------------------------------------------------------------------ */
-  /*  Internals                                                         */
-  /* ------------------------------------------------------------------ */
 
   private enqueueTask(queue: PQueue, opts: QueuedTaskOptions) {
     const {
