@@ -7,7 +7,7 @@ import { join } from "node:path";
 // CONFIG
 const config = {
   includes: [
-    // "src/**", // everything under src/
+    "src/**", // everything under src/
     "test/**", // everything under test/
     "*", // only shallow root-level files
   ],

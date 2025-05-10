@@ -20,6 +20,8 @@ describe("Prioriq - Event Emission", () => {
       delay: 1000, // ensures it's in queue
     });
 
+    jest.runAllTimers(); // Ensure the task is enqueued before prioritizing
+
     prioriq.prioritize("prio", 1);
 
     expect(onUpdated).toHaveBeenCalledWith({
@@ -39,6 +41,8 @@ describe("Prioriq - Event Emission", () => {
       group: "default",
       delay: 1000,
     });
+
+    jest.runAllTimers(); // Ensure the task is queued
 
     prioriq.cancel({ id: "c1" });
 
