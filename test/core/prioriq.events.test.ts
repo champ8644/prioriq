@@ -13,6 +13,7 @@ describe("Prioriq - Event Emission", () => {
     const onUpdated = jest.fn();
     prioriq.on("updated", onUpdated);
 
+    // Request the task to be added to the queue
     prioriq.request({
       id: "prio",
       task: async () => {},
@@ -20,10 +21,13 @@ describe("Prioriq - Event Emission", () => {
       delay: 1000, // ensures it's in queue
     });
 
+    // Ensure the task has been queued and processed before prioritizing
     jest.runAllTimers(); // Ensure the task is enqueued before prioritizing
 
+    // Prioritize the task
     prioriq.prioritize("prio", 1);
 
+    // Check if the updated event was emitted
     expect(onUpdated).toHaveBeenCalledWith({
       group: "default",
       id: "prio",

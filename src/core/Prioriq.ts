@@ -101,7 +101,7 @@ export class Prioriq {
     const queue = this.queues.get(group)!;
     const key = `${group}:${id}`;
 
-    // Fast‐path: bump priority if already pending
+    // Fast-path: bump priority if already pending
     if (this.pending.has(key)) {
       if (priority !== undefined) {
         const prev = this.lastRequest.get(key)!;
@@ -112,12 +112,12 @@ export class Prioriq {
       return;
     }
 
-    // Fast‐path: bump priority if already enqueued
+    // Fast-path: bump priority if already enqueued
     if (this.taskMap.has(id)) {
       // Update priority and re-enqueue task
       const taskData = this.taskMap.get(id)!;
-      taskData.priority = priority;
-      this.taskMap.set(id, taskData);
+      taskData.priority = priority; // Update priority
+      this.taskMap.set(id, taskData); // Ensure the task is updated in taskMap
       queue.add(task, { priority });
       this.emitter.emit("updated", { group, id, priority });
       return;
@@ -126,6 +126,10 @@ export class Prioriq {
     // Remember this request for refresh()
     const full: RequestOptions = { ...options, id, group, dedupeKey };
     this.lastRequest.set(key, full);
+
+    // Add the task to taskMap after queuing it
+    const taskData = { id, task, group, priority, cancel: () => {} }; // Ensure task is tracked in taskMap
+    this.taskMap.set(id, taskData);
 
     this.emitter.emit("queued", { group, id });
 
@@ -182,10 +186,10 @@ export class Prioriq {
 
     // [2] Adjust priority by re-adding the task with the new priority
     const newPriority = toNumber(newPrioInput); // Convert the priority input to a number
-    this.updateTask(id, newPriority, queue); // Use the new updateTask method
+    this.updateTask(id, newPriority, queue); // This ensures the task is updated with the new priority
 
     // [3] Emit the "updated" event to notify of the priority change
-    this.emitter.emit("updated", { group, id, priority: newPriority });
+    this.emitter.emit("updated", { group, id, priority: newPriority }); // Ensure the event is emitted here
   }
 
   private updateTask(id: string, newPriority: number, queue: PQueue) {
